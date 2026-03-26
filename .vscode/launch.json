@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Genie5 Smoke Test",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/tests/Genie4.Core.Smoke/bin/Debug/net8.0/Genie4.Core.Smoke.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    }
+  ]
+}
