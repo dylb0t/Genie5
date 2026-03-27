@@ -1,0 +1,13 @@
+namespace Genie5.Ui;
+
+public sealed class AnsiSpan
+{
+    public string Text { get; set; } = "";
+    public string Foreground { get; set; } = "Default";
+    public bool Bold { get; set; }
+}
+
+public sealed class RenderLine
+{
+    public List<AnsiSpan> Spans { get; } = new();
+}
