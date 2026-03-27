@@ -1,5 +1,0 @@
-<Project>
-  <ItemGroup>
-    <AvaloniaResource Include="**\*.axaml" />
-  </ItemGroup>
-</Project>
