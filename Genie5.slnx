@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Genie4.Core/Genie4.Core.csproj" />
+    <Project Path="src/Genie5.Ui/Genie5.Ui.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Genie4.Core.NetworkSmoke/Genie4.Core.NetworkSmoke.csproj" />
+    <Project Path="tests/Genie4.Core.Smoke/Genie4.Core.Smoke.csproj" />
+    <Project Path="tests/Genie4.Core.TriggerCaptureSmoke/Genie4.Core.TriggerCaptureSmoke.csproj" />
+  </Folder>
+</Solution>

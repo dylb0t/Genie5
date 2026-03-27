@@ -1,6 +1,6 @@
 using Avalonia;
 
-namespace Genie5.Ui.Rich;
+namespace Genie5.Ui;
 
 class Program
 {
