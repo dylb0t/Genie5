@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Genie5.Ui.GameOutputView">
+
+  <ScrollViewer Name="OutputScrollViewer"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Auto">
+    <StackPanel Name="OutputPanel"
+                Margin="6"
+                Spacing="2"/>
+  </ScrollViewer>
+
+</UserControl>

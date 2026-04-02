@@ -27,29 +27,22 @@
               Click="OnConnect"/>
     </StackPanel>
 
-    <!-- Center: Output -->
-    <ScrollViewer Name="OutputScrollViewer"
-                  VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Auto">
-
-      <StackPanel Name="OutputPanel"
-                  Margin="6"
-                  Spacing="2"/>
-
-    </ScrollViewer>
-
-    <!-- Bottom: Input -->
-    <StackPanel Orientation="Horizontal"
-                DockPanel.Dock="Bottom"
-                Margin="5"
-                Spacing="5">
+    <!-- Bottom: Input (must be declared before the fill element) -->
+    <Grid DockPanel.Dock="Bottom"
+          Margin="5"
+          ColumnDefinitions="*,Auto">
 
       <TextBox Name="InputBox"
-               Width="700"/>
+               Grid.Column="0"
+               Margin="0,0,5,0"/>
 
       <Button Content="Send"
+              Grid.Column="1"
               Click="OnSend"/>
-    </StackPanel>
+    </Grid>
+
+    <!-- Center: DockControl fills remaining space -->
+    <DockControl Name="MainDockControl" />
 
   </DockPanel>
 </Window>

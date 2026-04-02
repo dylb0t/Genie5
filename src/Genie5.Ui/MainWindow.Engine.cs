@@ -14,10 +14,10 @@ namespace Genie5.Ui;
 public partial class MainWindow
 {
     private readonly TcpGameClient _client = new();
-    private readonly CommandEngine _engine;
-    private readonly TriggerEngineFinal _triggers;
-    private readonly AliasEngine _aliases;
-    private readonly VariableEngine _variables;
+    private CommandEngine? _engine;
+    private TriggerEngineFinal? _triggers;
+    private AliasEngine? _aliases;
+    private VariableEngine? _variables;
 
     private void InitializeEngine()
     {
@@ -34,35 +34,18 @@ public partial class MainWindow
 
         _client.LineReceived += line =>
         {
-            AppendOutput(line);
-            _triggers.ProcessLine(line);
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                AppendOutput(line);
+                _triggers?.ProcessLine(line);
+            });
         };
-    }
 
-    private async void OnConnect(object? sender, RoutedEventArgs e)
-    {
-        InitializeEngine();
+        _client.Connected += () =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => AppendOutput("[connected]"));
 
-        var host = HostBox.Text ?? "aardmud.org";
-        var port = int.TryParse(PortBox.Text, out var p) ? p : 4000;
-
-        await _client.ConnectAsync(new GameConnectionOptions { Host = host, Port = port });
-        AppendOutput("[connected]");
-    }
-
-    private void OnSend(object? sender, RoutedEventArgs e)
-    {
-        var input = InputBox.Text ?? string.Empty;
-        InputBox.Text = string.Empty;
-
-        if (_variables.TryProcess(input)) return;
-
-        var expanded = _variables.Expand(input);
-
-        if (!_aliases.TryProcess(expanded))
-        {
-            _engine.ProcessInput(expanded);
-        }
+        _client.Disconnected += () =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => AppendOutput("[disconnected]"));
     }
 
     private sealed class UiHost : ICommandHost
@@ -76,7 +59,7 @@ public partial class MainWindow
 
         public void Echo(string text)
         {
-            _window.AppendOutput("[echo] " + text);
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => _window.AppendOutput("[echo] " + text));
         }
 
         public void SendToGame(string text, bool userInput = false, string origin = "")
