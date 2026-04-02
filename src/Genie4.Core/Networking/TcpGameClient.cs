@@ -31,6 +31,28 @@ public sealed class TcpGameClient
         _ = Task.Run(() => ReceiveLoop(cancellationToken));
     }
 
+    /// <summary>
+    /// Connects to a Simutronics game server using the key obtained from SGE auth.
+    /// Sends the Wrayth/StormFront handshake immediately on connect.
+    /// </summary>
+    public async Task ConnectWithKeyAsync(string host, int port, string loginKey,
+        CancellationToken cancellationToken = default)
+    {
+        _client = new TcpClient();
+        await _client.ConnectAsync(host, port, cancellationToken);
+        _stream = _client.GetStream();
+
+        // SGE game server handshake: key line + frontend identifier
+        var handshake = loginKey + "\nFE:WRAYTH /VERSION:1.0.1.22 /P:WIN_UNKNOWN /XML\n";
+        var bytes = Encoding.UTF8.GetBytes(handshake);
+        await _stream.WriteAsync(bytes, 0, bytes.Length, cancellationToken);
+        await _stream.FlushAsync(cancellationToken);
+
+        Connected?.Invoke();
+
+        _ = Task.Run(() => ReceiveLoop(cancellationToken));
+    }
+
     public async Task SendAsync(string text)
     {
         if (_stream == null) return;

@@ -2,25 +2,65 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Genie5.Ui.DialogConnect"
         Title="Connect"
-        Width="320" Height="160"
+        Width="380" Height="380"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
-  <Grid RowDefinitions="Auto,Auto,Auto" Margin="16">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="16">
 
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,80" Margin="0,0,0,12">
-      <TextBlock Grid.Column="0" Text="Host:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-      <TextBox   Grid.Column="1" Name="HostBox" Text="aardmud.org" />
-      <TextBlock Grid.Column="2" Text="Port:" VerticalAlignment="Center" Margin="12,0,8,0"/>
-      <TextBox   Grid.Column="3" Name="PortBox" Text="4000" />
+    <!-- Game selector -->
+    <Grid Grid.Row="0" ColumnDefinitions="90,*" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Game:" VerticalAlignment="Center"/>
+      <ComboBox  Grid.Column="1" Name="GameBox" HorizontalAlignment="Stretch"
+                 SelectionChanged="OnGameChanged"/>
     </Grid>
 
-    <TextBlock Grid.Row="1" Name="StatusText" Foreground="Gray" FontStyle="Italic"
-               Margin="0,0,0,12" Text=" " />
+    <!-- Character (Simu only) -->
+    <Grid Grid.Row="1" Name="CharacterRow" ColumnDefinitions="90,*" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Character:" VerticalAlignment="Center"/>
+      <TextBox   Grid.Column="1" Name="CharacterBox" Watermark="Leave blank to see list"/>
+    </Grid>
 
-    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-      <Button Name="ConnectButton" Content="Connect" Click="OnConnect" />
-      <Button Content="Cancel" Click="OnCancel" />
+    <!-- Host / Port (Custom only) -->
+    <Grid Grid.Row="2" Name="HostRow" ColumnDefinitions="90,*,16,80"
+          Margin="0,0,0,8" IsVisible="False">
+      <TextBlock Grid.Column="0" Text="Host:" VerticalAlignment="Center"/>
+      <TextBox   Grid.Column="1" Name="HostBox"/>
+      <TextBox   Grid.Column="3" Name="PortBox" Watermark="Port"/>
+    </Grid>
+
+    <!-- Account -->
+    <Grid Grid.Row="3" ColumnDefinitions="90,*" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Account:" VerticalAlignment="Center"/>
+      <TextBox   Grid.Column="1" Name="AccountBox"/>
+    </Grid>
+
+    <!-- Password -->
+    <Grid Grid.Row="4" ColumnDefinitions="90,*" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Password:" VerticalAlignment="Center"/>
+      <TextBox   Grid.Column="1" Name="PasswordBox" PasswordChar="●"/>
+    </Grid>
+
+    <!-- Save to profile -->
+    <Border Grid.Row="5"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+            BorderThickness="0,1,0,0" Margin="0,4,0,8" Padding="0,8,0,0">
+      <Grid ColumnDefinitions="Auto,*">
+        <CheckBox Grid.Column="0" Name="SaveProfileCheck" Content="Save as profile:"
+                  IsCheckedChanged="OnSaveProfileChanged"/>
+        <TextBox  Grid.Column="1" Name="ProfileNameBox" IsEnabled="False"
+                  Watermark="Profile name" Margin="8,0,0,0"/>
+      </Grid>
+    </Border>
+
+    <!-- Status -->
+    <TextBlock Grid.Row="6" Name="StatusText" Foreground="Gray" FontStyle="Italic" Text=" "/>
+
+    <!-- Buttons -->
+    <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,8,0,0">
+      <Button Content="Connect" Click="OnConnect"/>
+      <Button Content="Cancel"  Click="OnCancel"/>
     </StackPanel>
 
   </Grid>

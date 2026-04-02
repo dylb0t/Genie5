@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Genie4.Core.Profiles;
+using Genie4.Core.Sge;
 
 namespace Genie5.Ui;
 
@@ -14,8 +16,9 @@ public partial class MainWindow : Window
     private readonly List<string> _history = new();
     private int _historyIndex = -1;
 
-    private string _lastHost = "aardmud.org";
-    private int    _lastPort = 4000;
+    private string  _lastHost     = string.Empty;
+    private int     _lastPort     = 4000;
+    private string? _lastGameCode = "DR";
 
     public MainWindow()
     {
@@ -115,23 +118,81 @@ public partial class MainWindow : Window
             _engine.ProcessInput(expanded);
     }
 
+    private async void OnMenuConnectProfile(object? sender, RoutedEventArgs e)
+    {
+        var dialog = new DialogProfileConnect(_profiles, ProfilesPath);
+        var ok = await dialog.ShowDialog<bool>(this);
+        if (!ok || dialog.SelectedProfile is null) return;
+
+        var p        = dialog.SelectedProfile;
+        var password = _profiles.GetPassword(p);
+        await ConnectProfileAsync(p, password);
+    }
+
     private async void OnMenuConnect(object? sender, RoutedEventArgs e)
     {
-        var dialog = new DialogConnect(_lastHost, _lastPort);
-        var result = await dialog.ShowDialog<bool>(this);
-        if (!result || dialog.ResultHost is null) return;
+        var dialog = new DialogConnect(_lastGameCode, _lastHost, _lastPort, _profiles, ProfilesPath);
+        var ok = await dialog.ShowDialog<bool>(this);
+        if (!ok) return;
 
-        _lastHost = dialog.ResultHost;
-        _lastPort = dialog.ResultPort;
+        _lastGameCode = dialog.IsSimutronics ? dialog.ResultGameCode : null;
+        _lastHost     = dialog.ResultHost;
+        _lastPort     = dialog.ResultPort;
 
-        AppendOutput($"[connecting to {_lastHost}:{_lastPort}]");
+        if (dialog.IsSimutronics)
+            await ConnectSgeAsync(dialog.ResultGameCode, dialog.ResultCharacter,
+                                  dialog.ResultAccount, dialog.ResultPassword);
+        else
+            await ConnectDirectAsync(dialog.ResultHost, dialog.ResultPort);
+    }
+
+    private void OnMenuDisconnect(object? sender, RoutedEventArgs e) => _client.Disconnect();
+
+    // Connect using a saved profile
+    private async Task ConnectProfileAsync(ConnectionProfile p, string password)
+    {
+        if (p.IsSimutronics)
+            await ConnectSgeAsync(p.GameCode, p.CharacterName, p.AccountName, password);
+        else
+            await ConnectDirectAsync(p.Host, p.Port);
+    }
+
+    // Simutronics SGE auth → game server
+    private async Task ConnectSgeAsync(string gameCode, string character,
+                                        string account, string password)
+    {
+        AppendOutput($"[authenticating as {account} for {gameCode}...]");
+
+        SgeLoginResult result;
         try
         {
-            await _client.ConnectAsync(new Genie4.Core.Networking.GameConnectionOptions
-            {
-                Host = _lastHost,
-                Port = _lastPort
-            });
+            result = await new SgeClient().AuthenticateAsync(account, password, gameCode, character);
+        }
+        catch (Exception ex)
+        {
+            AppendOutput($"[authentication error: {ex.Message}]");
+            return;
+        }
+
+        if (!result.Success)
+        {
+            AppendOutput($"[authentication failed: {result.Error}]");
+            return;
+        }
+
+        // No character specified — show picker
+        if (result.Characters.Count > 0 && string.IsNullOrEmpty(result.Key))
+        {
+            var picked = await PickCharacterAsync(result.Characters);
+            if (picked is null) return;
+            await ConnectSgeAsync(gameCode, picked, account, password);
+            return;
+        }
+
+        AppendOutput($"[connecting to {result.GameHost}:{result.GamePort}]");
+        try
+        {
+            await _client.ConnectWithKeyAsync(result.GameHost, result.GamePort, result.Key);
         }
         catch (Exception ex)
         {
@@ -139,9 +200,49 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnMenuDisconnect(object? sender, RoutedEventArgs e)
+    // Direct TCP (non-Simutronics MUD)
+    private async Task ConnectDirectAsync(string host, int port)
     {
-        _client.Disconnect();
+        AppendOutput($"[connecting to {host}:{port}]");
+        try
+        {
+            await _client.ConnectAsync(new Genie4.Core.Networking.GameConnectionOptions
+                { Host = host, Port = port });
+        }
+        catch (Exception ex)
+        {
+            AppendOutput($"[connection failed: {ex.Message}]");
+        }
+    }
+
+    // Simple character picker dialog (inline window)
+    private async Task<string?> PickCharacterAsync(IReadOnlyList<string> characters)
+    {
+        var win = new Window
+        {
+            Title = "Select Character",
+            Width = 280, Height = 260,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+
+        var list   = new ListBox { ItemsSource = characters, Margin = new(8) };
+        var btn    = new Avalonia.Controls.Button
+            { Content = "Connect", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+              Margin = new(8) };
+        var panel  = new Avalonia.Controls.StackPanel();
+        panel.Children.Add(list);
+        panel.Children.Add(btn);
+        win.Content = panel;
+
+        string? picked = null;
+        btn.Click += (_, _) =>
+        {
+            picked = list.SelectedItem as string;
+            win.Close(picked is not null);
+        };
+
+        await win.ShowDialog<bool>(this);
+        return picked;
     }
 
     private void OnSend(object? sender, RoutedEventArgs e) => SendInput();

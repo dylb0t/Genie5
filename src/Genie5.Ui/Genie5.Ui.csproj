@@ -6,6 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseCompiledBindingsByDefault>true</UseCompiledBindingsByDefault>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AssemblyName>Genie</AssemblyName>
+    <RootNamespace>Genie5.Ui</RootNamespace>
+    <ApplicationTitle>Genie</ApplicationTitle>
   </PropertyGroup>
 
 <ItemGroup>

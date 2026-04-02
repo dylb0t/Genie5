@@ -12,7 +12,7 @@
 
       <MenuItem Header="_File">
         <MenuItem Header="_Connect..."              Click="OnMenuConnect" />
-        <MenuItem Header="Connect Using _Profile..."  IsEnabled="False" />
+        <MenuItem Header="Connect Using _Profile..."  Click="OnMenuConnectProfile" />
         <Separator />
         <MenuItem Header="_Auto Log"               IsEnabled="False" />
         <MenuItem Header="_Auto Reconnect"         IsEnabled="False" />
@@ -31,8 +31,7 @@
       </MenuItem>
 
       <MenuItem Header="_Profile">
-        <MenuItem Header="_Load Profile..."        IsEnabled="False" />
-        <MenuItem Header="_Save Profile"           IsEnabled="False" />
+        <MenuItem Header="_Manage Profiles..."     Click="OnMenuConnectProfile" />
       </MenuItem>
 
       <MenuItem Header="_Layout">
