@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Genie4.Core.Gsl;
 using Genie4.Core.Profiles;
 using Genie4.Core.Sge;
 
@@ -35,6 +36,8 @@ public partial class MainWindow : Window
 
         InitializeEngines();
 
+        StatusBar.Attach(_gslGameState);
+
         InputBox.KeyDown += OnInputKeyDown;
 
         Closing += (_, _) => SaveData();
@@ -46,21 +49,40 @@ public partial class MainWindow : Window
         AppendOutput("\x1b[1mBold text\x1b[0m");
     }
 
+    // Called for plain-text lines (demo output, echo, connection messages)
     internal void AppendOutput(string text)
     {
         var parsed = AnsiParser.Parse(text);
+        ApplyHighlightAndAppend(parsed);
+    }
 
-        var rule = _highlights.Match(parsed.PlainText);
+    // Called for GSL-parsed lines with styled segments
+    internal void AppendSegments(IReadOnlyList<GslSegment> segments)
+    {
+        var line = new RenderLine();
+        foreach (var seg in segments)
+        {
+            var parsed = AnsiParser.Parse(seg.Text, seg.GslBold, seg.GslColor);
+            foreach (var span in parsed.Spans)
+                line.Spans.Add(span);
+        }
+        ApplyHighlightAndAppend(line);
+    }
+
+    private void ApplyHighlightAndAppend(RenderLine line)
+    {
+        var rule = _highlights.Match(line.PlainText);
         if (rule != null)
         {
             var highlighted = new RenderLine();
-            foreach (var span in parsed.Spans)
-                highlighted.Spans.Add(new AnsiSpan { Text = span.Text, Foreground = rule.ForegroundColor, Bold = span.Bold });
-            parsed = highlighted;
+            foreach (var span in line.Spans)
+                highlighted.Spans.Add(new AnsiSpan
+                    { Text = span.Text, Foreground = rule.ForegroundColor, Bold = span.Bold });
+            line = highlighted;
         }
 
-        _scrollback.Add(parsed);
-        _gameOutputVm.AppendLine(parsed);
+        _scrollback.Add(line);
+        _gameOutputVm.AppendLine(line);
     }
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)

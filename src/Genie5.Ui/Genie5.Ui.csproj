@@ -9,7 +9,17 @@
     <AssemblyName>Genie</AssemblyName>
     <RootNamespace>Genie5.Ui</RootNamespace>
     <ApplicationTitle>Genie</ApplicationTitle>
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- macOS app bundle icon -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <AvaloniaResource Include="Assets/app.icns" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/app.png" />
+  </ItemGroup>
 
 <ItemGroup>
   <PackageReference Include="Avalonia" Version="11.3.12" />

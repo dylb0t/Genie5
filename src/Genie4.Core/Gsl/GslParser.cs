@@ -6,79 +6,62 @@ namespace Genie4.Core.Gsl;
 
 /// <summary>
 /// Parses a single line of Simutronics game server output.
-/// Strips XML tags from the display text and emits typed GslEvents
-/// for each tag encountered.
+/// Returns styled GslSegments (text + bold + colour override) and GslEvents.
 /// </summary>
 public sealed class GslParser
 {
-    // Carry partial XML across lines (server may split tags across newlines)
     private readonly StringBuilder _xmlCarry = new();
 
-    // Tracks open compass block so we collect <dir> children
-    private bool _inCompass;
-    private readonly List<string> _compassDirs = new();
-
-    // Tracks open preset block
-    private bool _inPreset;
-    private string _presetId = string.Empty;
-
-    /// <summary>
-    /// Parse one raw server line. Returns the plain text to display
-    /// and populates <paramref name="events"/> with any game state events.
-    /// </summary>
-    public string ParseLine(string rawLine, List<GslEvent> events)
+    private static readonly Dictionary<string, string> PresetColors = new()
     {
-        // DR sends "< " and "> " at start of lines which are NOT XML tags
-        if (rawLine.StartsWith("< "))  rawLine = rawLine.Replace("< ", "&lt; ");
-        if (rawLine.StartsWith("> "))  rawLine = rawLine.Replace("> ", "&gt; ");
+        ["roomdesc"]  = string.Empty,
+        ["whispers"]  = "Cyan",
+        ["thoughts"]  = "Magenta",
+        ["speech"]    = "Yellow",
+        ["creatures"] = string.Empty,
+    };
 
-        var text      = new StringBuilder();
-        var xmlBuf    = new StringBuilder();
-        int depth     = 0;
-        bool inHtml   = false;
-        var htmlBuf   = new StringBuilder();
-        char prev     = '\0';
+    public (IReadOnlyList<GslSegment> Segments, IReadOnlyList<GslEvent> Events) ParseLine(string rawLine)
+    {
+        if (rawLine.StartsWith("< ")) rawLine = rawLine.Replace("< ", "&lt; ");
+        if (rawLine.StartsWith("> ")) rawLine = rawLine.Replace("> ", "&gt; ");
 
-        // Prepend any carry from previous incomplete line
+        var ctx = new ParseContext();
+
         if (_xmlCarry.Length > 0)
         {
-            xmlBuf.Append(_xmlCarry);
+            ctx.XmlBuf.Append(_xmlCarry);
             _xmlCarry.Clear();
-            depth = 1;
+            ctx.Depth = 1;
         }
+
+        bool inHtml  = false;
+        var  htmlBuf = new StringBuilder();
+        char prev    = '\0';
 
         foreach (char c in rawLine)
         {
             if (c == '<')
             {
-                depth++;
-                xmlBuf.Append(c);
+                ctx.Depth++;
+                ctx.XmlBuf.Append(c);
             }
             else if (c == '>')
             {
-                xmlBuf.Append(c);
+                ctx.XmlBuf.Append(c);
+                ctx.Depth--;
 
-                bool selfClose = prev == '/';
-                bool endTag    = xmlBuf.Length > 1 && xmlBuf[1] == '/';
-
-                if (selfClose || endTag)
-                    depth--;
-                else
-                    depth--; // normal close still reduces depth after we've collected the tag
-
-                if (depth <= 0)
+                if (ctx.Depth <= 0)
                 {
-                    depth = 0;
-                    var fragment = xmlBuf.ToString();
-                    xmlBuf.Clear();
-                    ProcessFragment(fragment, text, events);
+                    ctx.Depth = 0;
+                    var fragment = ctx.XmlBuf.ToString();
+                    ctx.XmlBuf.Clear();
+                    ProcessFragment(fragment, ctx);
                 }
             }
-            else if (depth > 0)
+            else if (ctx.Depth > 0)
             {
-                // Track end-tag marker
-                if (c == '/' && prev == '<') { /* end tag — already captured '<' */ }
-                xmlBuf.Append(c);
+                ctx.XmlBuf.Append(c);
             }
             else if (c == '&')
             {
@@ -91,39 +74,38 @@ public sealed class GslParser
                 htmlBuf.Append(c);
                 if (c == ';')
                 {
-                    text.Append(TranslateHtmlEntity(htmlBuf.ToString()));
+                    ctx.Text.Append(TranslateHtmlEntity(htmlBuf.ToString()));
                     htmlBuf.Clear();
                     inHtml = false;
                 }
                 else if (htmlBuf.Length > 8)
                 {
-                    // Not a real entity — flush as-is
-                    text.Append(htmlBuf);
+                    ctx.Text.Append(htmlBuf);
                     htmlBuf.Clear();
                     inHtml = false;
                 }
             }
-            else if (c != '\r' && c != (char)28) // GSL skip char
+            else if (c != '\r' && c != (char)28)
             {
-                text.Append(c);
+                ctx.Text.Append(c);
             }
 
             prev = c;
         }
 
-        // If XML tag ran to end of line without closing, carry it forward
-        if (depth > 0 && xmlBuf.Length > 0)
-            _xmlCarry.Append(xmlBuf);
+        if (ctx.Depth > 0 && ctx.XmlBuf.Length > 0)
+            _xmlCarry.Append(ctx.XmlBuf);
 
         if (inHtml && htmlBuf.Length > 0)
-            text.Append(htmlBuf); // flush partial entity
+            ctx.Text.Append(htmlBuf);
 
-        return text.ToString();
+        ctx.Flush();
+
+        return (ctx.Segments, ctx.Events);
     }
 
-    private void ProcessFragment(string fragment, StringBuilder text, List<GslEvent> events)
+    private void ProcessFragment(string fragment, ParseContext ctx)
     {
-        // Wrap in a root so XmlDocument can parse it
         XmlDocument doc;
         try
         {
@@ -132,8 +114,7 @@ public sealed class GslParser
         }
         catch
         {
-            // Malformed — treat as plain text
-            text.Append(StripTags(fragment));
+            ctx.Text.Append(StripTags(fragment));
             return;
         }
 
@@ -142,85 +123,96 @@ public sealed class GslParser
 
         switch (node.Name)
         {
+            case "pushBold":
+                ctx.Flush();
+                ctx.Bold = true;
+                break;
+
+            case "popBold":
+                ctx.Flush();
+                ctx.Bold = false;
+                break;
+
+            case "preset":
+            {
+                var pid  = Attr(node, "id").ToLower();
+                var ptxt = node.InnerText;
+                if (pid == "whisper") pid = "whispers";
+                if (pid == "thought") pid = "thoughts";
+                ctx.Flush();
+                var color = PresetColors.GetValueOrDefault(pid, string.Empty);
+                ctx.Events.Add(new PresetEvent(pid, ptxt));
+                ctx.Segments.Add(new GslSegment(ptxt, ctx.Bold, color));
+                break;
+            }
+
             case "roundTime":
                 if (int.TryParse(Attr(node, "value"), out int rt))
-                    events.Add(new RoundTimeEvent(rt));
+                    ctx.Events.Add(new RoundTimeEvent(rt));
                 break;
 
             case "castTime":
                 if (int.TryParse(Attr(node, "value"), out int ct))
-                    events.Add(new CastTimeEvent(ct));
+                    ctx.Events.Add(new CastTimeEvent(ct));
                 break;
 
             case "prompt":
-                var promptText = node.InnerText;
                 int.TryParse(Attr(node, "time"), out int gt);
-                events.Add(new PromptEvent(promptText, gt));
-                text.Append(promptText);
+                ctx.Events.Add(new PromptEvent(node.InnerText, gt));
+                ctx.Text.Append(node.InnerText);
                 break;
 
             case "spell":
-                events.Add(new SpellEvent(node.InnerText));
+                ctx.Events.Add(new SpellEvent(node.InnerText));
                 break;
 
             case "indicator":
-                events.Add(new IndicatorEvent(
-                    Attr(node, "id"),
-                    Attr(node, "visible") == "y"));
+                ctx.Events.Add(new IndicatorEvent(Attr(node, "id"), Attr(node, "visible") == "y"));
                 break;
 
             case "compass":
-                _inCompass = true;
-                _compassDirs.Clear();
+            {
+                var dirs = new List<string>();
                 foreach (XmlNode child in node.ChildNodes)
-                    if (child.Name == "dir")
-                        _compassDirs.Add(Attr(child, "value"));
-                events.Add(new CompassEvent(_compassDirs.ToList()));
-                _inCompass = false;
+                    if (child.Name == "dir") dirs.Add(Attr(child, "value"));
+                ctx.Events.Add(new CompassEvent(dirs));
                 break;
+            }
 
             case "pushStream":
-                events.Add(new PushStreamEvent(Attr(node, "id")));
+                ctx.Events.Add(new PushStreamEvent(Attr(node, "id")));
                 break;
 
             case "popStream":
-                events.Add(new PopStreamEvent());
+                ctx.Events.Add(new PopStreamEvent());
                 break;
 
             case "output":
-                events.Add(new OutputModeEvent(Attr(node, "class") == "mono"));
-                break;
-
-            case "pushBold":
-                events.Add(new PushBoldEvent());
-                break;
-
-            case "popBold":
-                events.Add(new PopBoldEvent());
-                break;
-
-            case "preset":
-                var pid  = Attr(node, "id");
-                var ptxt = node.InnerText;
-                events.Add(new PresetEvent(pid, ptxt));
-                text.Append(ptxt);
+                ctx.Events.Add(new OutputModeEvent(Attr(node, "class") == "mono"));
                 break;
 
             case "streamWindow":
                 if (Attr(node, "id") == "room")
                 {
-                    var subtitle = Attr(node, "subtitle");
-                    if (subtitle.StartsWith(" - ")) subtitle = subtitle[3..];
-                    if (subtitle.StartsWith("["))   subtitle = subtitle[1..^1];
-                    events.Add(new RoomTitleEvent(subtitle.Trim()));
+                    var sub = Attr(node, "subtitle");
+                    if (sub.StartsWith(" - ")) sub = sub[3..];
+                    if (sub.StartsWith("["))   sub = sub[1..^1];
+                    ctx.Events.Add(new RoomTitleEvent(sub.Trim()));
                 }
                 break;
 
-            case "a":   // Hyperlink — show inner text
-                text.Append(node.InnerText);
+            case "a":
+                ctx.Text.Append(node.InnerText);
                 break;
 
-            // Tags that carry no display text and no state we track yet
+            case "progressBar":
+            {
+                var pid = Attr(node, "id");
+                if (!string.IsNullOrEmpty(pid) && int.TryParse(Attr(node, "value"), out int pv))
+                    ctx.Events.Add(new VitalsEvent(pid, pv));
+                break;
+            }
+
             case "style":
             case "component":
             case "resource":
@@ -237,11 +229,27 @@ public sealed class GslParser
                 break;
 
             default:
-                // Unknown tag — emit its inner text so nothing is silently dropped
                 var inner = node.InnerText;
-                if (!string.IsNullOrEmpty(inner))
-                    text.Append(inner);
+                if (!string.IsNullOrEmpty(inner)) ctx.Text.Append(inner);
                 break;
+        }
+    }
+
+    private sealed class ParseContext
+    {
+        public List<GslSegment> Segments { get; } = new();
+        public List<GslEvent>   Events   { get; } = new();
+        public StringBuilder    Text     { get; } = new();
+        public StringBuilder    XmlBuf   { get; } = new();
+        public int  Depth { get; set; }
+        public bool Bold  { get; set; }
+        public string PresetColor { get; set; } = string.Empty;
+
+        public void Flush()
+        {
+            if (Text.Length == 0) return;
+            Segments.Add(new GslSegment(Text.ToString(), Bold, PresetColor));
+            Text.Clear();
         }
     }
 

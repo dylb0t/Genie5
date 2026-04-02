@@ -44,3 +44,6 @@ public sealed record PresetEvent(string PresetId, string Text) : GslEvent;
 
 /// <summary><streamWindow id="room" subtitle="..."/> — room title update.</summary>
 public sealed record RoomTitleEvent(string Title) : GslEvent;
+
+/// <summary><progressBar id="health" value="80" text="80"/> — vitals update (0-100).</summary>
+public sealed record VitalsEvent(string Id, int Value) : GslEvent;

@@ -65,13 +65,14 @@ public partial class GameOutputView : UserControl
 
     private static IBrush ToBrush(string color) => color switch
     {
-        "Red"     => Brushes.Red,
-        "Green"   => Brushes.Green,
-        "Yellow"  => Brushes.Yellow,
-        "Blue"    => Brushes.DodgerBlue,
-        "Cyan"    => Brushes.Cyan,
-        "White"   => Brushes.White,
-        "Magenta" => Brushes.Magenta,
-        _         => Brushes.LightGray
+        "Black"   => Brushes.DimGray,       // pure black invisible on dark bg
+        "Red"     => Brushes.IndianRed,
+        "Green"   => Brushes.LightGreen,
+        "Yellow"  => Brushes.Khaki,
+        "Blue"    => Brushes.CornflowerBlue,
+        "Magenta" => Brushes.Orchid,
+        "Cyan"    => Brushes.PaleTurquoise,
+        "White"   => Brushes.WhiteSmoke,
+        _         => Brushes.LightGray      // Default
     };
 }

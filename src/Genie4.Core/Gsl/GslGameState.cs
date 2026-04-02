@@ -21,6 +21,14 @@ public sealed class GslGameState
     /// Remaining roundtime in seconds (computed each prompt).
     public int RoundTimeRemaining { get; private set; }
 
+    // ── Vitals (0-100) ──────────────────────────────────────────────────────
+
+    public int Health        { get; private set; } = -1;
+    public int Mana          { get; private set; } = -1;
+    public int Stamina       { get; private set; } = -1;
+    public int Spirit        { get; private set; } = -1;
+    public int Concentration { get; private set; } = -1;
+
     // ── Spell ────────────────────────────────────────────────────────────────
 
     public string PreparedSpell { get; private set; } = string.Empty;
@@ -114,6 +122,17 @@ public sealed class GslGameState
 
                 case RoomTitleEvent e:
                     RoomTitle = e.Title;
+                    break;
+
+                case VitalsEvent e:
+                    switch (e.Id)
+                    {
+                        case "health":        Health        = e.Value; break;
+                        case "mana":          Mana          = e.Value; break;
+                        case "stamina":       Stamina       = e.Value; break;
+                        case "spirit":        Spirit        = e.Value; break;
+                        case "concentration": Concentration = e.Value; break;
+                    }
                     break;
             }
         }

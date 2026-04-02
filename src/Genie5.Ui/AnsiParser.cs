@@ -4,25 +4,24 @@ namespace Genie5.Ui;
 
 public static class AnsiParser
 {
-    public static RenderLine Parse(string input)
+    /// <summary>Parse a string that may contain ANSI escape codes into a RenderLine.</summary>
+    public static RenderLine Parse(string input,
+        bool gslBold = false, string gslColor = "")
     {
         var line = new RenderLine();
-
-        var sb = new StringBuilder();
-        var fg = "Default";
-        var bold = false;
+        var sb   = new StringBuilder();
+        var fg   = string.IsNullOrEmpty(gslColor) ? "Default" : gslColor;
+        var bold = gslBold;
 
         void Flush()
         {
             if (sb.Length == 0) return;
-
             line.Spans.Add(new AnsiSpan
             {
-                Text = sb.ToString(),
+                Text       = sb.ToString(),
                 Foreground = fg,
-                Bold = bold
+                Bold       = bold
             });
-
             sb.Clear();
         }
 
@@ -37,20 +36,24 @@ public static class AnsiParser
 
                 var codes = input.Substring(i + 2, m - i - 2).Split(';');
 
-                foreach (var c in codes)
+                foreach (var code in codes)
                 {
-                    if (!int.TryParse(c, out var n)) continue;
-
+                    if (!int.TryParse(code, out var n)) continue;
                     switch (n)
                     {
-                        case 0: fg = "Default"; bold = false; break;
-                        case 1: bold = true; break;
-                        case 31: fg = "Red"; break;
-                        case 32: fg = "Green"; break;
-                        case 33: fg = "Yellow"; break;
-                        case 34: fg = "Blue"; break;
-                        case 36: fg = "Cyan"; break;
-                        case 37: fg = "White"; break;
+                        case 0:
+                            fg   = string.IsNullOrEmpty(gslColor) ? "Default" : gslColor;
+                            bold = gslBold;
+                            break;
+                        case 1:  bold = true;      break;
+                        case 30: fg = "Black";     break;
+                        case 31: fg = "Red";       break;
+                        case 32: fg = "Green";     break;
+                        case 33: fg = "Yellow";    break;
+                        case 34: fg = "Blue";      break;
+                        case 35: fg = "Magenta";   break;
+                        case 36: fg = "Cyan";      break;
+                        case 37: fg = "White";     break;
                     }
                 }
 

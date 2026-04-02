@@ -57,25 +57,19 @@ public partial class MainWindow
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                var events = new System.Collections.Generic.List<GslEvent>();
-                var plainText = _gslParser.ParseLine(line, events);
+                var (segments, events) = _gslParser.ParseLine(line);
                 _gslGameState.Apply(events);
 
-                // Route to sub-stream or main output
-                if (!string.IsNullOrEmpty(_gslGameState.CurrentStream))
-                {
-                    // Sub-streams handled by future panels — suppress from main for now
-                    // unless it is an unknown stream, in which case still show it
-                    if (_gslGameState.CurrentStream is "thoughts" or "logons" or "death"
-                        or "combat" or "inv" or "familiar" or "percWindow")
-                        return;
-                }
+                // Suppress known sub-streams until panels exist
+                if (_gslGameState.CurrentStream is "thoughts" or "logons" or "death"
+                    or "combat" or "inv" or "familiar" or "percWindow")
+                    return;
 
-                if (!string.IsNullOrWhiteSpace(plainText))
-                {
-                    AppendOutput(plainText);
-                    _triggers.ProcessLine(plainText);
-                }
+                var plainText = string.Concat(segments.Select(s => s.Text));
+                if (string.IsNullOrWhiteSpace(plainText)) return;
+
+                AppendSegments(segments);
+                _triggers.ProcessLine(plainText);
             });
         };
 
