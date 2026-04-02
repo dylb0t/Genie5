@@ -21,3 +21,12 @@ public sealed class VariablePersistenceModel
     public string Value { get; set; } = string.Empty;
     public string Scope { get; set; } = "User";
 }
+
+public sealed class HighlightPersistenceModel
+{
+    public string Pattern { get; set; } = string.Empty;
+    public string ForegroundColor { get; set; } = "Yellow";
+    public bool IsRegex { get; set; }
+    public bool CaseSensitive { get; set; }
+    public bool IsEnabled { get; set; } = true;
+}

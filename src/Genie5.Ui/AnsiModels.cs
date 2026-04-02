@@ -10,4 +10,6 @@ public sealed class AnsiSpan
 public sealed class RenderLine
 {
     public List<AnsiSpan> Spans { get; } = new();
+
+    public string PlainText => string.Concat(Spans.Select(s => s.Text));
 }

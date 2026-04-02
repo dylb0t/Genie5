@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:Genie5.Ui"
+        x:Class="Genie5.Ui.FormConfig"
+        Title="Settings"
+        Width="720" Height="520"
+        WindowStartupLocation="CenterOwner">
+
+  <Grid RowDefinitions="*,Auto">
+
+    <TabControl Grid.Row="0">
+
+      <TabItem Header="Aliases">
+        <local:AliasesPanel Name="AliasesPanelCtrl" />
+      </TabItem>
+
+      <TabItem Header="Triggers">
+        <local:TriggersPanel Name="TriggersPanelCtrl" />
+      </TabItem>
+
+      <TabItem Header="Highlights">
+        <local:HighlightsPanel Name="HighlightsPanelCtrl" />
+      </TabItem>
+
+    </TabControl>
+
+    <Button Grid.Row="1"
+            Content="Close"
+            HorizontalAlignment="Right"
+            Margin="8"
+            Click="OnClose" />
+
+  </Grid>
+</Window>

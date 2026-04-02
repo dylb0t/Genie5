@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Genie4.Core.Aliases;
+using Genie4.Core.Highlights;
 using Genie4.Core.Triggers;
 using Genie4.Core.Variables;
 
@@ -65,5 +66,24 @@ public sealed class PersistenceService
     {
         if (!File.Exists(path)) return new();
         return JsonSerializer.Deserialize<List<VariablePersistenceModel>>(File.ReadAllText(path)) ?? new();
+    }
+
+    public void SaveHighlights(string path, IEnumerable<HighlightRule> rules)
+    {
+        var data = rules.Select(r => new HighlightPersistenceModel
+        {
+            Pattern = r.Pattern,
+            ForegroundColor = r.ForegroundColor,
+            IsRegex = r.IsRegex,
+            CaseSensitive = r.CaseSensitive,
+            IsEnabled = r.IsEnabled
+        });
+        File.WriteAllText(path, JsonSerializer.Serialize(data, _options));
+    }
+
+    public List<HighlightPersistenceModel> LoadHighlights(string path)
+    {
+        if (!File.Exists(path)) return new();
+        return JsonSerializer.Deserialize<List<HighlightPersistenceModel>>(File.ReadAllText(path)) ?? new();
     }
 }

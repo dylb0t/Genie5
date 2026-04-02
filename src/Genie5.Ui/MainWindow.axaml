@@ -7,27 +7,70 @@
 
   <DockPanel>
 
-    <!-- Top: Connection controls -->
-    <StackPanel Orientation="Horizontal"
-                DockPanel.Dock="Top"
-                Margin="5"
-                Spacing="5">
+    <!-- Menu bar -->
+    <Menu DockPanel.Dock="Top">
 
-      <TextBox Name="HostBox"
-               Width="200"
-               Watermark="Host"
-               Text="aardmud.org"/>
+      <MenuItem Header="_File">
+        <MenuItem Header="_Connect..."              Click="OnMenuConnect" />
+        <MenuItem Header="Connect Using _Profile..."  IsEnabled="False" />
+        <Separator />
+        <MenuItem Header="_Auto Log"               IsEnabled="False" />
+        <MenuItem Header="_Auto Reconnect"         IsEnabled="False" />
+        <Separator />
+        <MenuItem Header="Triggers _Enabled"       IsEnabled="False" />
+        <MenuItem Header="Ignores/Gags _Enabled"   IsEnabled="False" />
+        <MenuItem Header="_Plugins Enabled"        IsEnabled="False" />
+        <Separator />
+        <MenuItem Header="E_xit"                   Click="OnMenuExit" />
+      </MenuItem>
 
-      <TextBox Name="PortBox"
-               Width="80"
-               Watermark="Port"
-               Text="4000"/>
+      <MenuItem Header="_Edit">
+        <MenuItem Header="_Configuration..."       Click="OnSettings" />
+        <Separator />
+        <MenuItem Header="Paste _Multi Line"       IsEnabled="False" />
+      </MenuItem>
 
-      <Button Content="Connect"
-              Click="OnConnect"/>
-    </StackPanel>
+      <MenuItem Header="_Profile">
+        <MenuItem Header="_Load Profile..."        IsEnabled="False" />
+        <MenuItem Header="_Save Profile"           IsEnabled="False" />
+      </MenuItem>
 
-    <!-- Bottom: Input (must be declared before the fill element) -->
+      <MenuItem Header="_Layout">
+        <MenuItem Header="_Load Layout..."         IsEnabled="False" />
+        <MenuItem Header="Save Layout _As..."      IsEnabled="False" />
+        <Separator />
+        <MenuItem Header="_Always On Top"          IsEnabled="False" />
+      </MenuItem>
+
+      <MenuItem Header="_Windows" />
+
+      <MenuItem Header="_Script">
+        <MenuItem Header="Script _Explorer..."     IsEnabled="False" />
+        <Separator />
+        <MenuItem Header="_Pause All Scripts"      IsEnabled="False" />
+        <MenuItem Header="_Resume All Scripts"     IsEnabled="False" />
+        <MenuItem Header="_Abort All Scripts"      IsEnabled="False" />
+      </MenuItem>
+
+      <MenuItem Header="_AutoMapper">
+        <MenuItem Header="_Show Window"            IsEnabled="False" />
+      </MenuItem>
+
+      <MenuItem Header="_Plugins">
+        <MenuItem Header="No plugins loaded"       IsEnabled="False" />
+      </MenuItem>
+
+      <MenuItem Header="_Help">
+        <MenuItem Header="_Check For Updates"      IsEnabled="False" />
+        <Separator />
+        <MenuItem Header="_Discord"                IsEnabled="False" />
+        <MenuItem Header="_GitHub"                 Click="OnMenuGitHub" />
+        <MenuItem Header="_Wiki"                   IsEnabled="False" />
+      </MenuItem>
+
+    </Menu>
+
+    <!-- Bottom: Input -->
     <Grid DockPanel.Dock="Bottom"
           Margin="5"
           ColumnDefinitions="*,Auto">
