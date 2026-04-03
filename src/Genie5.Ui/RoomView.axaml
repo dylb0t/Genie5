@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Genie5.Ui"
+             xmlns:conv="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia"
+             x:Class="Genie5.Ui.RoomView"
+             x:DataType="local:RoomViewModel"
+             FontFamily="Cascadia Mono,Consolas,Courier New,monospace"
+             FontSize="12"
+             Background="#141414">
+
+  <DockPanel>
+
+    <Border DockPanel.Dock="Top"
+            Background="#1C1C1C"
+            BorderBrush="#3A3A3A"
+            BorderThickness="0,0,0,1"
+            Padding="8,5">
+      <TextBlock Text="{Binding RoomTitle}"
+                 FontWeight="SemiBold"
+                 Foreground="#E8C84A"
+                 TextWrapping="Wrap"/>
+    </Border>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="8,6" Spacing="8">
+
+        <TextBlock Text="{Binding RoomDescription}"
+                   Foreground="#CCCCCC"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding RoomDescription,
+                       Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+        <TextBlock Text="{Binding RoomPlayers}"
+                   Foreground="#88AAFF"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding RoomPlayers,
+                       Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+        <TextBlock Text="{Binding RoomObjects}"
+                   Foreground="#AAAAAA"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding RoomObjects,
+                       Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+      </StackPanel>
+    </ScrollViewer>
+
+  </DockPanel>
+</UserControl>

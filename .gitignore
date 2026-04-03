@@ -11,6 +11,7 @@ out/
 
 # VS Code
 .vscode/
+.claude
 
 # Rider / JetBrains
 .idea/

@@ -12,6 +12,13 @@ public sealed class GslParser
 {
     private readonly StringBuilder _xmlCarry = new();
 
+    // Accumulates <dir> children between <compass> … </compass> fragments.
+    private List<string>? _pendingCompassDirs;
+
+    // Accumulates inner text between <component id="…"> … </component> across line boundaries.
+    private string?       _pendingComponentId;
+    private readonly StringBuilder _pendingComponentText = new();
+
     private static readonly Dictionary<string, string> PresetColors = new()
     {
         ["roomdesc"]  = string.Empty,
@@ -87,7 +94,11 @@ public sealed class GslParser
             }
             else if (c != '\r' && c != (char)28)
             {
-                ctx.Text.Append(c);
+                // Route plain text into the component buffer when inside a <component> block
+                if (_pendingComponentId is not null)
+                    _pendingComponentText.Append(c);
+                else
+                    ctx.Text.Append(c);
             }
 
             prev = c;
@@ -106,6 +117,24 @@ public sealed class GslParser
 
     private void ProcessFragment(string fragment, ParseContext ctx)
     {
+        // Closing tags like </compass> produce invalid XML when wrapped — handle them first.
+        if (fragment.StartsWith("</"))
+        {
+            var tagName = fragment[2..].TrimEnd('>').Trim();
+            if (tagName == "compass" && _pendingCompassDirs is not null)
+            {
+                ctx.Events.Add(new CompassEvent(_pendingCompassDirs));
+                _pendingCompassDirs = null;
+            }
+            else if (tagName == "component" && _pendingComponentId is not null)
+            {
+                ctx.Events.Add(new ComponentEvent(_pendingComponentId, _pendingComponentText.ToString().Trim()));
+                _pendingComponentId = null;
+                _pendingComponentText.Clear();
+            }
+            return;
+        }
+
         XmlDocument doc;
         try
         {
@@ -171,13 +200,18 @@ public sealed class GslParser
                 break;
 
             case "compass":
-            {
-                var dirs = new List<string>();
-                foreach (XmlNode child in node.ChildNodes)
-                    if (child.Name == "dir") dirs.Add(Attr(child, "value"));
-                ctx.Events.Add(new CompassEvent(dirs));
+                // Self-closing <compass/> means no exits.
+                // Opening <compass> (no '/') starts accumulation; dirs arrive as
+                // separate fragments, and </compass> triggers the event (see above).
+                if (fragment.Contains("/>"))
+                    ctx.Events.Add(new CompassEvent(new List<string>()));
+                else
+                    _pendingCompassDirs = new List<string>();
                 break;
-            }
+
+            case "dir":
+                _pendingCompassDirs?.Add(Attr(node, "value"));
+                break;
 
             case "pushStream":
                 ctx.Events.Add(new PushStreamEvent(Attr(node, "id")));
@@ -213,8 +247,14 @@ public sealed class GslParser
                 break;
             }
 
-            case "style":
             case "component":
+                // Opening tag — start capturing inner text at the parser level
+                // so that multi-line component bodies survive line boundaries.
+                _pendingComponentId = Attr(node, "id");
+                _pendingComponentText.Clear();
+                break;
+
+            case "style":
             case "resource":
             case "dialogData":
             case "openDialog":
@@ -237,10 +277,10 @@ public sealed class GslParser
 
     private sealed class ParseContext
     {
-        public List<GslSegment> Segments { get; } = new();
-        public List<GslEvent>   Events   { get; } = new();
-        public StringBuilder    Text     { get; } = new();
-        public StringBuilder    XmlBuf   { get; } = new();
+        public List<GslSegment> Segments      { get; } = new();
+        public List<GslEvent>   Events        { get; } = new();
+        public StringBuilder    Text          { get; } = new();
+        public StringBuilder    XmlBuf        { get; } = new();
         public int  Depth { get; set; }
         public bool Bold  { get; set; }
         public string PresetColor { get; set; } = string.Empty;

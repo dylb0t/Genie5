@@ -10,51 +10,109 @@ namespace Genie5.Ui;
 
 public sealed class GenieDockFactory : Factory
 {
-    private readonly GameOutputViewModel _gameOutputVm;
-    private IRootDock? _rootDock;
-    private IDocumentDock? _documentDock;
+    private readonly GameOutputViewModel   _mainVm;
+    private readonly GameOutputViewModel[] _streamVms;
+    private readonly RoomViewModel         _roomVm;
 
-    public GenieDockFactory(GameOutputViewModel gameOutputVm)
+    private IRootDock? _rootDock;
+
+    public GenieDockFactory(GameOutputViewModel mainVm,
+                            GameOutputViewModel[] streamVms,
+                            RoomViewModel roomVm)
     {
-        _gameOutputVm = gameOutputVm;
+        _mainVm    = mainVm;
+        _streamVms = streamVms;
+        _roomVm    = roomVm;
     }
 
     public override IRootDock CreateLayout()
     {
-        var documentDock = new DocumentDock
+        // Centre-left: main game output (top) + streams tabs (bottom)
+        var mainDock = new DocumentDock
         {
-            Id = "Documents",
-            Title = "Documents",
-            IsCollapsable = false,
+            Id                = "MainOutput",
+            Title             = "Main",
+            IsCollapsable     = false,
             CanCreateDocument = false,
-            VisibleDockables = CreateList<IDockable>(_gameOutputVm),
-            ActiveDockable = _gameOutputVm
+            Proportion        = 0.65,
+            VisibleDockables  = CreateList<IDockable>(_mainVm),
+            ActiveDockable    = _mainVm
         };
-        _documentDock = documentDock;
 
-        var rootDock = CreateRootDock();
-        rootDock.Id = "Root";
-        rootDock.Title = "Root";
-        rootDock.IsCollapsable = false;
-        rootDock.VisibleDockables = CreateList<IDockable>(documentDock);
-        rootDock.DefaultDockable = documentDock;
-        rootDock.ActiveDockable = documentDock;
-        _rootDock = rootDock;
+        var streamDockables = new List<IDockable>();
+        foreach (var vm in _streamVms)
+            streamDockables.Add(vm);
 
-        return rootDock;
+        var streamsDock = new DocumentDock
+        {
+            Id                = "Streams",
+            Title             = "Streams",
+            IsCollapsable     = false,
+            CanCreateDocument = false,
+            Proportion        = 0.35,
+            VisibleDockables  = streamDockables,
+            ActiveDockable    = _streamVms.Length > 0 ? _streamVms[0] : null
+        };
+
+        var leftPanel = new ProportionalDock
+        {
+            Id               = "LeftPanel",
+            Orientation      = Orientation.Vertical,
+            IsCollapsable    = false,
+            Proportion       = 0.72,
+            VisibleDockables = CreateList<IDockable>(
+                mainDock,
+                new ProportionalDockSplitter { Id = "MainStreamSplitter" },
+                streamsDock)
+        };
+
+        // Right: room panel
+        var roomDock = new DocumentDock
+        {
+            Id                = "RoomPanel",
+            Title             = "Room",
+            IsCollapsable     = false,
+            CanCreateDocument = false,
+            Proportion        = 0.28,
+            VisibleDockables  = CreateList<IDockable>(_roomVm),
+            ActiveDockable    = _roomVm
+        };
+
+        var rootLayout = new ProportionalDock
+        {
+            Id               = "RootLayout",
+            Orientation      = Orientation.Horizontal,
+            IsCollapsable    = false,
+            VisibleDockables = CreateList<IDockable>(
+                leftPanel,
+                new ProportionalDockSplitter { Id = "RoomSplitter" },
+                roomDock)
+        };
+
+        var root = CreateRootDock();
+        root.Id               = "Root";
+        root.IsCollapsable    = false;
+        root.VisibleDockables = CreateList<IDockable>(rootLayout);
+        root.DefaultDockable  = rootLayout;
+        root.ActiveDockable   = rootLayout;
+        _rootDock             = root;
+
+        return root;
     }
 
     public override void InitLayout(IDockable layout)
     {
         ContextLocator = new Dictionary<string, Func<object?>>
         {
-            [_gameOutputVm.Id] = () => _gameOutputVm
+            [_mainVm.Id] = () => _mainVm,
+            [_roomVm.Id] = () => _roomVm,
         };
+        foreach (var vm in _streamVms)
+            ContextLocator[vm.Id] = () => vm;
 
         DockableLocator = new Dictionary<string, Func<IDockable?>>
         {
-            ["Root"]      = () => _rootDock,
-            ["Documents"] = () => _documentDock
+            ["Root"] = () => _rootDock
         };
 
         HostWindowLocator = new Dictionary<string, Func<IHostWindow?>>

@@ -9,10 +9,12 @@ public sealed class GameOutputViewModel : Document
 
     public ObservableCollection<RenderLine> Lines { get; } = new();
 
-    public GameOutputViewModel()
+    public GameOutputViewModel() : this("GameOutput", "Game Output") { }
+
+    public GameOutputViewModel(string id, string title)
     {
-        Id = "GameOutput";
-        Title = "Game Output";
+        Id = id;
+        Title = title;
         CanClose = false;
         CanPin = false;
     }

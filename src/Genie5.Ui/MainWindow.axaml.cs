@@ -13,6 +13,10 @@ public partial class MainWindow : Window
 {
     private readonly ScrollbackBuffer _scrollback = new();
     private readonly GameOutputViewModel _gameOutputVm;
+    private readonly RoomViewModel _roomVm = new();
+
+    // Sub-stream panels keyed by GSL stream id
+    private readonly Dictionary<string, GameOutputViewModel> _streamVms = new();
 
     private readonly List<string> _history = new();
     private int _historyIndex = -1;
@@ -27,7 +31,26 @@ public partial class MainWindow : Window
 
         _gameOutputVm = new GameOutputViewModel();
 
-        var factory = new GenieDockFactory(_gameOutputVm);
+        // Create a dockable panel for each sub-stream
+        var streams = new (string id, string title)[]
+        {
+            ("thoughts",   "Thoughts"),
+            ("logons",     "Arrivals"),
+            ("death",      "Deaths"),
+            ("combat",     "Combat"),
+            ("inv",        "Inventory"),
+            ("familiar",   "Familiar"),
+            ("percWindow", "Perception"),
+        };
+        var streamVmArray = new GameOutputViewModel[streams.Length];
+        for (int i = 0; i < streams.Length; i++)
+        {
+            var vm = new GameOutputViewModel(streams[i].id, streams[i].title);
+            _streamVms[streams[i].id] = vm;
+            streamVmArray[i] = vm;
+        }
+
+        var factory = new GenieDockFactory(_gameOutputVm, streamVmArray, _roomVm);
         var layout  = factory.CreateLayout();
         factory.InitLayout(layout);
 
@@ -37,6 +60,7 @@ public partial class MainWindow : Window
         InitializeEngines();
 
         StatusBar.Attach(_gslGameState);
+        _roomVm.Attach(_gslGameState);
 
         InputBox.KeyDown += OnInputKeyDown;
 

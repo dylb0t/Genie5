@@ -55,7 +55,15 @@ public sealed class GslGameState
 
     // ── Room ─────────────────────────────────────────────────────────────────
 
-    public string RoomTitle { get; private set; } = string.Empty;
+    public string RoomTitle       { get; private set; } = string.Empty;
+    public string RoomDescription { get; private set; } = string.Empty;
+    public string RoomObjects     { get; private set; } = string.Empty;
+    public string RoomPlayers     { get; private set; } = string.Empty;
+
+    // ── Hands ────────────────────────────────────────────────────────────────
+
+    public string LeftHand  { get; private set; } = string.Empty;
+    public string RightHand { get; private set; } = string.Empty;
 
     // ── Output routing ───────────────────────────────────────────────────────
 
@@ -122,6 +130,22 @@ public sealed class GslGameState
 
                 case RoomTitleEvent e:
                     RoomTitle = e.Title;
+                    break;
+
+                case ComponentEvent e:
+                    switch (e.Id)
+                    {
+                        case "room desc":    RoomDescription = e.Text; break;
+                        case "room objs":    RoomObjects     = e.Text; break;
+                        case "room players": RoomPlayers     = e.Text; break;
+                        case "lhand":        LeftHand        = e.Text; break;
+                        case "rhand":        RightHand       = e.Text; break;
+                    }
+                    break;
+
+                case PresetEvent e when e.PresetId == "roomdesc":
+                    if (!string.IsNullOrWhiteSpace(e.Text))
+                        RoomDescription = e.Text;
                     break;
 
                 case VitalsEvent e:

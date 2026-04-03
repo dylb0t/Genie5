@@ -47,3 +47,6 @@ public sealed record RoomTitleEvent(string Title) : GslEvent;
 
 /// <summary><progressBar id="health" value="80" text="80"/> — vitals update (0-100).</summary>
 public sealed record VitalsEvent(string Id, int Value) : GslEvent;
+
+/// <summary><component id="room desc">...</component> — in-place component update.</summary>
+public sealed record ComponentEvent(string Id, string Text) : GslEvent;

@@ -7,6 +7,9 @@
     <DataTemplate DataType="local:GameOutputViewModel">
       <local:GameOutputView />
     </DataTemplate>
+    <DataTemplate DataType="local:RoomViewModel">
+      <local:RoomView />
+    </DataTemplate>
   </Application.DataTemplates>
 
   <Application.Styles>

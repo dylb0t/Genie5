@@ -25,6 +25,9 @@ public partial class StatusBarView : UserControl
 
         _state = state;
         _state.StateChanged += OnStateChanged;
+
+        Compass.Attach(state);
+        BodyDiagram.Attach(state);
     }
 
     private void OnStateChanged() => Refresh();
@@ -35,29 +38,29 @@ public partial class StatusBarView : UserControl
         RefreshVitals();
         RefreshTimeBars();
         RefreshIndicators();
-        RefreshSpell();
+        RefreshHands();
     }
 
     private void RefreshVitals()
     {
-        SetVital(HealthBar,  HealthText,  _state!.Health);
-        SetVital(ManaBar,    ManaText,    _state.Mana);
-        SetVital(StaminaBar, StaminaText, _state.Stamina);
-        SetVital(SpiritBar,  SpiritText,  _state.Spirit);
-        SetVital(ConcBar,    ConcText,    _state.Concentration);
+        SetVital(HealthBar,  HealthText,  "Health",        _state!.Health);
+        SetVital(ManaBar,    ManaText,    "Mana",          _state.Mana);
+        SetVital(ConcBar,    ConcText,    "Concentration", _state.Concentration);
+        SetVital(StaminaBar, StaminaText, "Fatigue",       _state.Stamina);
+        SetVital(SpiritBar,  SpiritText,  "Spirit",        _state.Spirit);
     }
 
-    private static void SetVital(ProgressBar bar, TextBlock label, int value)
+    private static void SetVital(ProgressBar bar, TextBlock label, string name, int value)
     {
         if (value < 0)
         {
-            bar.Value = 100;
-            label.Text = "--";
+            bar.Value  = 100;
+            label.Text = name + " --";
         }
         else
         {
-            bar.Value = value;
-            label.Text = value.ToString();
+            bar.Value  = value;
+            label.Text = $"{name} {value}%";
         }
     }
 
@@ -67,46 +70,47 @@ public partial class StatusBarView : UserControl
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-        // Roundtime
         var rt = _state.RoundTimeEpoch > 0
             ? Math.Max(0L, _state.RoundTimeEpoch - now)
             : 0L;
 
-        RoundtimePanel.IsVisible = rt > 0;
+        RoundtimeBar.IsVisible = rt > 0;
         if (rt > 0)
         {
             RoundtimeBar.Maximum = Math.Max(rt, 1);
             RoundtimeBar.Value   = rt;
             RoundtimeText.Text   = $"{rt}s";
         }
+        else
+        {
+            RoundtimeText.Text = string.Empty;
+        }
 
-        // Cast time
         var ct = _state.CastTimeEpoch > 0
             ? Math.Max(0L, _state.CastTimeEpoch - now)
             : 0L;
 
-        CastTimePanel.IsVisible = ct > 0;
+        CastTimeBar.IsVisible = ct > 0;
         if (ct > 0)
         {
             CastTimeBar.Maximum = Math.Max(ct, 1);
             CastTimeBar.Value   = ct;
-            CastTimeText.Text   = $"{ct}s";
+            CastTimeText.Text   = $"CT {ct}s";
         }
-
-        TimeSeparator.IsVisible = rt > 0 || ct > 0;
+        else
+        {
+            CastTimeText.Text = string.Empty;
+        }
     }
 
     private void RefreshIndicators()
     {
         var s = _state!;
 
-        // Position — show exactly one
-        IndicatorStanding.IsVisible = s.Standing  && !s.Sitting && !s.Kneeling && !s.Prone;
-        IndicatorSitting.IsVisible  = s.Sitting;
-        IndicatorKneeling.IsVisible = s.Kneeling;
-        IndicatorProne.IsVisible    = s.Prone;
-
-        // Ailments
+        IndicatorStanding.IsVisible  = s.Standing && !s.Sitting && !s.Kneeling && !s.Prone;
+        IndicatorSitting.IsVisible   = s.Sitting;
+        IndicatorKneeling.IsVisible  = s.Kneeling;
+        IndicatorProne.IsVisible     = s.Prone;
         IndicatorStunned.IsVisible   = s.Stunned;
         IndicatorDead.IsVisible      = s.Dead;
         IndicatorBleeding.IsVisible  = s.Bleeding;
@@ -118,10 +122,11 @@ public partial class StatusBarView : UserControl
         IndicatorJoined.IsVisible    = s.Joined;
     }
 
-    private void RefreshSpell()
+    private void RefreshHands()
     {
-        var spell = _state!.PreparedSpell;
-        SpellPanel.IsVisible = !string.IsNullOrEmpty(spell);
-        SpellText.Text = spell;
+        var s = _state!;
+        LeftHandText.Text  = string.IsNullOrEmpty(s.LeftHand)  ? "Empty" : s.LeftHand;
+        RightHandText.Text = string.IsNullOrEmpty(s.RightHand) ? "Empty" : s.RightHand;
+        SpellText.Text     = string.IsNullOrEmpty(s.PreparedSpell) ? "None" : s.PreparedSpell;
     }
 }

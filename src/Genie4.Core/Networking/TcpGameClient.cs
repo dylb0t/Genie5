@@ -26,6 +26,10 @@ public sealed class TcpGameClient
         await _client.ConnectAsync(options.Host, options.Port, cancellationToken);
         _stream = _client.GetStream();
 
+        // Send an initial "look" to prompt the server to send room/state data.
+        await _stream.WriteAsync("look\n"u8.ToArray(), cancellationToken);
+        await _stream.FlushAsync(cancellationToken);
+
         Connected?.Invoke();
 
         _ = Task.Run(() => ReceiveLoop(cancellationToken));

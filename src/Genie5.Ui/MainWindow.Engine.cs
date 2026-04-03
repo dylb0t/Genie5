@@ -60,16 +60,30 @@ public partial class MainWindow
                 var (segments, events) = _gslParser.ParseLine(line);
                 _gslGameState.Apply(events);
 
-                // Suppress known sub-streams until panels exist
-                if (_gslGameState.CurrentStream is "thoughts" or "logons" or "death"
-                    or "combat" or "inv" or "familiar" or "percWindow")
-                    return;
-
                 var plainText = string.Concat(segments.Select(s => s.Text));
                 if (string.IsNullOrWhiteSpace(plainText)) return;
 
-                AppendSegments(segments);
-                _triggers.ProcessLine(plainText);
+                // Route to sub-stream panel when in a named stream.
+                // Unknown named streams (e.g. "room") are suppressed — their data
+                // arrives via ComponentEvent / GslGameState, not as raw text.
+                var stream = _gslGameState.CurrentStream;
+                if (string.IsNullOrEmpty(stream))
+                {
+                    AppendSegments(segments);
+                    _triggers.ProcessLine(plainText);
+                }
+                else if (_streamVms.TryGetValue(stream, out var streamVm))
+                {
+                    var line2 = new RenderLine();
+                    foreach (var seg in segments)
+                    {
+                        var parsed = AnsiParser.Parse(seg.Text, seg.GslBold, seg.GslColor);
+                        foreach (var span in parsed.Spans)
+                            line2.Spans.Add(span);
+                    }
+                    streamVm.AppendLine(line2);
+                }
+                // else: named stream with no panel (e.g. "room") — suppress
             });
         };
 
