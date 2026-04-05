@@ -8,6 +8,7 @@ public sealed class TcpGameClient
     private TcpClient? _client;
     private NetworkStream? _stream;
     private readonly byte[] _buffer;
+    private bool _awaitingHandshake;
 
     public event Action<string>? LineReceived;
     public event Action? Connected;
@@ -26,10 +27,6 @@ public sealed class TcpGameClient
         await _client.ConnectAsync(options.Host, options.Port, cancellationToken);
         _stream = _client.GetStream();
 
-        // Send an initial "look" to prompt the server to send room/state data.
-        await _stream.WriteAsync("look\n"u8.ToArray(), cancellationToken);
-        await _stream.FlushAsync(cancellationToken);
-
         Connected?.Invoke();
 
         _ = Task.Run(() => ReceiveLoop(cancellationToken));
@@ -38,6 +35,7 @@ public sealed class TcpGameClient
     /// <summary>
     /// Connects to a Simutronics game server using the key obtained from SGE auth.
     /// Sends the Wrayth/StormFront handshake immediately on connect.
+    /// Defers sending "look" until the server confirms the session with &lt;settingsInfo&gt;.
     /// </summary>
     public async Task ConnectWithKeyAsync(string host, int port, string loginKey,
         CancellationToken cancellationToken = default)
@@ -51,6 +49,8 @@ public sealed class TcpGameClient
         var bytes = Encoding.UTF8.GetBytes(handshake);
         await _stream.WriteAsync(bytes, 0, bytes.Length, cancellationToken);
         await _stream.FlushAsync(cancellationToken);
+
+        _awaitingHandshake = true;
 
         Connected?.Invoke();
 
@@ -100,6 +100,13 @@ public sealed class TcpGameClient
                         var line = sb.ToString();
                         sb.Clear();
                         LineReceived?.Invoke(line);
+
+                        // Send "look" once the server confirms the session is ready.
+                        if (_awaitingHandshake && line.Contains("<settingsInfo"))
+                        {
+                            _awaitingHandshake = false;
+                            await SendAsync("look");
+                        }
                     }
                     else if (ch != '\r')
                     {

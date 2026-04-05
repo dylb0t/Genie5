@@ -236,7 +236,7 @@ public sealed class GslParser
                 break;
 
             case "a":
-                ctx.Text.Append(node.InnerText);
+                AppendText(ctx, node.InnerText);
                 break;
 
             case "progressBar":
@@ -262,8 +262,10 @@ public sealed class GslParser
                 _pendingComponentText.Clear();
                 break;
 
-            case "style":
             case "inv":
+                break;
+
+            case "style":
             case "resource":
             case "dialogData":
             case "openDialog":
@@ -279,7 +281,7 @@ public sealed class GslParser
 
             default:
                 var inner = node.InnerText;
-                if (!string.IsNullOrEmpty(inner)) ctx.Text.Append(inner);
+                if (!string.IsNullOrEmpty(inner)) AppendText(ctx, inner);
                 break;
         }
     }
@@ -300,6 +302,16 @@ public sealed class GslParser
             Segments.Add(new GslSegment(Text.ToString(), Bold, PresetColor));
             Text.Clear();
         }
+    }
+
+    // Appends text to the component accumulator when inside a <component> block,
+    // otherwise to the normal output segments.
+    private void AppendText(ParseContext ctx, string text)
+    {
+        if (_pendingComponentId is not null)
+            _pendingComponentText.Append(text);
+        else
+            ctx.Text.Append(text);
     }
 
     private static string Attr(XmlNode node, string name)
