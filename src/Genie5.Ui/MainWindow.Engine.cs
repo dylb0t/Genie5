@@ -57,7 +57,13 @@ public partial class MainWindow
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
+                // Raw tab: unprocessed server data
+                var rawLine = new RenderLine();
+                rawLine.Spans.Add(new AnsiSpan { Text = line, Foreground = "#AAAAAA" });
+                _rawOutputVm.AppendLine(rawLine);
+
                 var (segments, events) = _gslParser.ParseLine(line);
+
                 _gslGameState.Apply(events);
 
                 var plainText = string.Concat(segments.Select(s => s.Text));

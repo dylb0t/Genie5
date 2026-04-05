@@ -247,6 +247,14 @@ public sealed class GslParser
                 break;
             }
 
+            case "left":
+                ctx.Events.Add(new ComponentEvent("lhand", node.InnerText.Trim()));
+                break;
+
+            case "right":
+                ctx.Events.Add(new ComponentEvent("rhand", node.InnerText.Trim()));
+                break;
+
             case "component":
                 // Opening tag — start capturing inner text at the parser level
                 // so that multi-line component bodies survive line boundaries.
@@ -255,6 +263,7 @@ public sealed class GslParser
                 break;
 
             case "style":
+            case "inv":
             case "resource":
             case "dialogData":
             case "openDialog":

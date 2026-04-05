@@ -11,16 +11,19 @@ namespace Genie5.Ui;
 public sealed class GenieDockFactory : Factory
 {
     private readonly GameOutputViewModel   _mainVm;
+    private readonly GameOutputViewModel   _rawVm;
     private readonly GameOutputViewModel[] _streamVms;
     private readonly RoomViewModel         _roomVm;
 
     private IRootDock? _rootDock;
 
     public GenieDockFactory(GameOutputViewModel mainVm,
+                            GameOutputViewModel rawVm,
                             GameOutputViewModel[] streamVms,
                             RoomViewModel roomVm)
     {
         _mainVm    = mainVm;
+        _rawVm     = rawVm;
         _streamVms = streamVms;
         _roomVm    = roomVm;
     }
@@ -35,7 +38,7 @@ public sealed class GenieDockFactory : Factory
             IsCollapsable     = false,
             CanCreateDocument = false,
             Proportion        = 0.65,
-            VisibleDockables  = CreateList<IDockable>(_mainVm),
+            VisibleDockables  = CreateList<IDockable>(_mainVm, _rawVm),
             ActiveDockable    = _mainVm
         };
 
@@ -105,6 +108,7 @@ public sealed class GenieDockFactory : Factory
         ContextLocator = new Dictionary<string, Func<object?>>
         {
             [_mainVm.Id] = () => _mainVm,
+            [_rawVm.Id]  = () => _rawVm,
             [_roomVm.Id] = () => _roomVm,
         };
         foreach (var vm in _streamVms)

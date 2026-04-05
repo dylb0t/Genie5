@@ -13,6 +13,7 @@ public partial class MainWindow : Window
 {
     private readonly ScrollbackBuffer _scrollback = new();
     private readonly GameOutputViewModel _gameOutputVm;
+    private readonly GameOutputViewModel _rawOutputVm;
     private readonly RoomViewModel _roomVm = new();
 
     // Sub-stream panels keyed by GSL stream id
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _gameOutputVm = new GameOutputViewModel();
+        _rawOutputVm  = new GameOutputViewModel("RawOutput", "Raw");
 
         // Create a dockable panel for each sub-stream
         var streams = new (string id, string title)[]
@@ -50,7 +52,7 @@ public partial class MainWindow : Window
             streamVmArray[i] = vm;
         }
 
-        var factory = new GenieDockFactory(_gameOutputVm, streamVmArray, _roomVm);
+        var factory = new GenieDockFactory(_gameOutputVm, _rawOutputVm, streamVmArray, _roomVm);
         var layout  = factory.CreateLayout();
         factory.InitLayout(layout);
 
