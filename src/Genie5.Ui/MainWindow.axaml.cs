@@ -67,6 +67,10 @@ public partial class MainWindow : Window
 
         InitializeEngines();
 
+        // Attach window settings after all VMs exist so Settings props are set before any rendering.
+        var streamTuples = streams.Select((s, i) => (s.id, s.title, streamVmArray[i]));
+        AttachWindowSettings(_gameOutputVm, _rawOutputVm, _logVm, streamTuples);
+
         _mapVm   = new MapViewModel(_mapperEngine);
         _mapView = new MapView();
         _mapView.Attach(_mapVm);
@@ -456,7 +460,7 @@ public partial class MainWindow : Window
 
     private void OnSettings(object? sender, RoutedEventArgs e)
     {
-        var config = new FormConfig(_aliases, _triggers, _highlights, _presets);
+        var config = new FormConfig(_aliases, _triggers, _highlights, _presets, _windowSettings);
         config.Show();
     }
 

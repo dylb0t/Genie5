@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Genie5.Ui.LayoutPanel">
+
+  <TabControl>
+
+    <TabItem Header="Windows">
+      <Grid ColumnDefinitions="180,*" Margin="4">
+
+        <!-- Left: window list -->
+        <ListBox Name="WindowList"
+                 Grid.Column="0"
+                 Margin="0,0,6,0"
+                 SelectionChanged="OnWindowSelected" />
+
+        <!-- Right: settings form -->
+        <Grid Grid.Column="1"
+              RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+              Margin="4,0,0,0">
+
+          <TextBlock Grid.Row="0" Text="Title:" Margin="0,0,0,2" />
+          <TextBox   Grid.Row="1" Name="TitleBox" Margin="0,0,0,8" />
+
+          <TextBlock Grid.Row="2" Text="Font family:" Margin="0,0,0,2" />
+          <TextBox   Grid.Row="3" Name="FontFamilyBox" Margin="0,0,0,8"
+                     Watermark="e.g. Cascadia Mono,Consolas,Courier New" />
+
+          <TextBlock Grid.Row="4" Text="Font size:" Margin="0,0,0,2" />
+          <TextBox   Grid.Row="5" Name="FontSizeBox" Margin="0,0,0,8" Width="80"
+                     HorizontalAlignment="Left" />
+
+          <TextBlock Grid.Row="6" Text="Foreground color:" Margin="0,0,0,2" />
+          <ComboBox  Grid.Row="7" Name="FgColorBox" HorizontalAlignment="Stretch" Margin="0,0,0,8" />
+
+          <TextBlock Grid.Row="8" Text="Background color:" Margin="0,0,0,2" />
+          <ComboBox  Grid.Row="9" Name="BgColorBox" HorizontalAlignment="Stretch" Margin="0,0,0,8" />
+
+          <CheckBox  Grid.Row="10" Name="TimestampCheck"
+                     Content="Prepend timestamp to each line"
+                     Margin="0,0,0,12" />
+
+          <StackPanel Grid.Row="11" Orientation="Horizontal" Spacing="6">
+            <Button Content="Apply"    Click="OnApply" />
+            <Button Content="Reset"    Click="OnReset" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="12" Name="StatusText"
+                     Margin="0,6,0,0" Foreground="Gray" FontStyle="Italic" />
+        </Grid>
+
+      </Grid>
+    </TabItem>
+
+  </TabControl>
+
+</UserControl>

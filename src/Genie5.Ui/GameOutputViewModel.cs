@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Dock.Model.Mvvm.Controls;
+using Genie4.Core.Layout;
 
 namespace Genie5.Ui;
 
@@ -8,6 +9,9 @@ public sealed class GameOutputViewModel : Document
     private const int MaxLines = 2000;
 
     public ObservableCollection<RenderLine> Lines { get; } = new();
+
+    /// <summary>Display settings (font, colour, timestamp). Set by MainWindow after store is loaded.</summary>
+    public WindowSettings? Settings { get; set; }
 
     public GameOutputViewModel() : this("GameOutput", "Game Output") { }
 

@@ -5,12 +5,14 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Genie4.Core.Layout;
 
 namespace Genie5.Ui;
 
 public partial class GameOutputView : UserControl
 {
     private GameOutputViewModel? _vm;
+    private WindowSettings?      _settings;
 
     public GameOutputView()
     {
@@ -21,10 +23,15 @@ public partial class GameOutputView : UserControl
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (_vm is not null)
+        {
             _vm.Lines.CollectionChanged -= OnLinesChanged;
+            if (_settings is not null) _settings.Changed -= OnSettingsChanged;
+        }
 
-        _vm = DataContext as GameOutputViewModel;
+        _vm       = DataContext as GameOutputViewModel;
+        _settings = _vm?.Settings;
 
+        ApplySettings();
         OutputPanel.Children.Clear();
 
         if (_vm is not null)
@@ -32,8 +39,38 @@ public partial class GameOutputView : UserControl
             foreach (var line in _vm.Lines)
                 RenderLine(line);
             _vm.Lines.CollectionChanged += OnLinesChanged;
+            if (_settings is not null) _settings.Changed += OnSettingsChanged;
         }
     }
+
+    private void OnSettingsChanged()
+    {
+        _settings = _vm?.Settings;
+        ApplySettings();
+        // Re-render all existing lines so timestamp changes take effect.
+        OutputPanel.Children.Clear();
+        if (_vm is not null)
+            foreach (var line in _vm.Lines)
+                RenderLine(line);
+    }
+
+    private void ApplySettings()
+    {
+        var ff  = _settings?.FontFamily ?? "Cascadia Mono,Consolas,Courier New,monospace";
+        var fs  = _settings?.FontSize   > 0 ? _settings.FontSize : 13;
+        var fg  = _settings?.Foreground;
+        var bg  = _settings?.Background;
+
+        FontFamily = new FontFamily(ff);
+        FontSize   = fs;
+
+        OutputScrollViewer.Background = string.IsNullOrEmpty(bg) ? null : ToBrush(bg);
+
+        // Store the configured default foreground so ToBrush("Default") can use it.
+        _defaultForeground = (fg is null || fg == "Default") ? "LightGray" : fg;
+    }
+
+    private string _defaultForeground = "LightGray";
 
     private void OnLinesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -52,6 +89,15 @@ public partial class GameOutputView : UserControl
     private void RenderLine(RenderLine parsed)
     {
         var block = new SelectableTextBlock { TextWrapping = TextWrapping.Wrap };
+
+        if (_settings?.Timestamp == true)
+        {
+            block.Inlines!.Add(new Run(DateTime.Now.ToString("[HH:mm:ss] "))
+            {
+                Foreground = Brushes.Gray,
+                FontWeight = FontWeight.Normal,
+            });
+        }
 
         foreach (var span in parsed.Spans)
         {
@@ -74,11 +120,16 @@ public partial class GameOutputView : UserControl
 
     private static readonly Dictionary<string, IBrush> BrushCache = new(StringComparer.OrdinalIgnoreCase);
 
-    private static IBrush ToBrush(string color)
+    private IBrush ToBrush(string color)
     {
         if (string.IsNullOrEmpty(color) || color == "Default")
-            return Brushes.LightGray;
+            return ParseBrush(_defaultForeground);
 
+        return ParseBrush(color);
+    }
+
+    private static IBrush ParseBrush(string color)
+    {
         // ANSI names mapped to readable equivalents on a dark background
         switch (color)
         {

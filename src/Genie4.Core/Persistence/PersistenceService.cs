@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Genie4.Core.Aliases;
 using Genie4.Core.Highlights;
+using Genie4.Core.Layout;
 using Genie4.Core.Presets;
 using Genie4.Core.Triggers;
 using Genie4.Core.Variables;
@@ -116,5 +117,27 @@ public sealed class PersistenceService
         if (!File.Exists(path)) return null;
         try { return JsonSerializer.Deserialize<LayoutState>(File.ReadAllText(path)); }
         catch { return null; }
+    }
+
+    public void SaveWindowSettings(string path, WindowSettingsStore store)
+    {
+        var data = store.All.Values.Select(s => new WindowSettingsPersistenceModel
+        {
+            Id           = s.Id,
+            DisplayTitle = s.DisplayTitle,
+            FontFamily   = s.FontFamily,
+            FontSize     = s.FontSize,
+            Foreground   = s.Foreground,
+            Background   = s.Background,
+            Timestamp    = s.Timestamp,
+        });
+        File.WriteAllText(path, JsonSerializer.Serialize(data, _options));
+    }
+
+    public List<WindowSettingsPersistenceModel> LoadWindowSettings(string path)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<List<WindowSettingsPersistenceModel>>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
     }
 }

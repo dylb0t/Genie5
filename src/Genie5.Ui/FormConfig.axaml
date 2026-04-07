@@ -26,6 +26,10 @@
         <local:PresetsPanel Name="PresetsPanelCtrl" />
       </TabItem>
 
+      <TabItem Header="Layout">
+        <local:LayoutPanel Name="LayoutPanelCtrl" />
+      </TabItem>
+
     </TabControl>
 
     <Button Grid.Row="1"

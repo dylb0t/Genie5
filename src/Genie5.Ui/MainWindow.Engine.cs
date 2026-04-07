@@ -4,6 +4,7 @@ using Genie4.Core.Commanding;
 using Genie4.Core.Config;
 using Genie4.Core.Gsl;
 using Genie4.Core.Highlights;
+using Genie4.Core.Layout;
 using Genie4.Core.Mapper;
 using Genie4.Core.Networking;
 using Genie4.Core.Persistence;
@@ -32,6 +33,7 @@ public partial class MainWindow
     internal readonly ProfileStore _profiles = new();
     internal AutoMapperEngine _mapperEngine = null!;
     private readonly MapZoneRepository _mapRepo = new();
+    internal readonly WindowSettingsStore _windowSettings = new();
 
     // Prompt suppression: only show the prompt when output or a command preceded it.
     private bool _outputSinceLastPrompt  = false;
@@ -141,6 +143,36 @@ public partial class MainWindow
 
     internal string ProfilesPath => DataPath("profiles.json");
 
+    // Called after all VMs are created so Settings can be attached.
+    internal void AttachWindowSettings(
+        GameOutputViewModel gameVm,
+        GameOutputViewModel rawVm,
+        GameOutputViewModel logVm,
+        IEnumerable<(string id, string title, GameOutputViewModel vm)> streams)
+    {
+        // Register in display order (matches LayoutPanel list)
+        gameVm.Settings = _windowSettings.Register(gameVm.Id, gameVm.Title);
+        rawVm.Settings  = _windowSettings.Register(rawVm.Id,  rawVm.Title);
+        logVm.Settings  = _windowSettings.Register(logVm.Id,  logVm.Title);
+        foreach (var (id, title, vm) in streams)
+            vm.Settings = _windowSettings.Register(id, title);
+
+        // Apply persisted overrides
+        foreach (var m in _persistence.LoadWindowSettings(DataPath("window_settings.json")))
+            _windowSettings.Apply(m);
+
+        // Push loaded titles back to document titles so tab headers update
+        foreach (var s in _windowSettings.All.Values)
+        {
+            if (!string.IsNullOrEmpty(s.DisplayTitle))
+            {
+                if (s.Id == gameVm.Id) gameVm.Title = s.DisplayTitle;
+                else if (s.Id == rawVm.Id) rawVm.Title = s.DisplayTitle;
+                else if (s.Id == logVm.Id) logVm.Title = s.DisplayTitle;
+            }
+        }
+    }
+
     internal void LoadData()
     {
         _profiles.Load(ProfilesPath);
@@ -169,6 +201,7 @@ public partial class MainWindow
         _persistence.SaveTriggers(DataPath("triggers.json"), _triggers.Triggers);
         _persistence.SaveHighlights(DataPath("highlights.json"), _highlights.Rules);
         _persistence.SavePresets(DataPath("presets.json"), _presets);
+        _persistence.SaveWindowSettings(DataPath("window_settings.json"), _windowSettings);
         _profiles.Save(ProfilesPath);
         _mapRepo.Save(DataPath(Path.Combine("maps", "default.json")), _mapperEngine.ActiveZone);
         SaveLayout();
