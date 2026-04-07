@@ -50,3 +50,9 @@ public sealed record VitalsEvent(string Id, int Value) : GslEvent;
 
 /// <summary><component id="room desc">...</component> — in-place component update.</summary>
 public sealed record ComponentEvent(string Id, string Text) : GslEvent;
+
+/// <summary><inv id="stow">a worn leather ...</inv> — container inventory line, route to inv stream.</summary>
+public sealed record InvLineEvent(string ContainerId, string Text) : GslEvent;
+
+/// <summary><clearContainer id="stow"/> — clear the inv stream window for a fresh listing.</summary>
+public sealed record ClearContainerEvent(string ContainerId) : GslEvent;

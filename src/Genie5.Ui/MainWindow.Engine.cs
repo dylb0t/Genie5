@@ -83,6 +83,19 @@ public partial class MainWindow
 
                 _gslGameState.Apply(events);
 
+                // Route container/inv events to the inv stream window.
+                foreach (var ev in events)
+                {
+                    if (ev is ClearContainerEvent && _streamVms.TryGetValue("inv", out var clrVm))
+                        clrVm.Lines.Clear();
+                    else if (ev is InvLineEvent inv && _streamVms.TryGetValue("inv", out var invVm))
+                    {
+                        var invLine = new RenderLine();
+                        invLine.Spans.Add(new AnsiSpan { Text = inv.Text, Foreground = "Default" });
+                        invVm.AppendLine(invLine);
+                    }
+                }
+
                 // Duplicate speech to the Log panel (without suppressing main output).
                 foreach (var ev in events)
                 {
@@ -183,7 +196,17 @@ public partial class MainWindow
             _triggers.AddTrigger(m.Pattern, m.Action, m.CaseSensitive, m.IsEnabled);
 
         foreach (var m in _persistence.LoadHighlights(DataPath("highlights.json")))
-            _highlights.AddRule(m.Pattern, m.ForegroundColor, m.BackgroundColor, m.IsRegex, m.CaseSensitive, m.IsEnabled);
+        {
+            HighlightMatchType matchType;
+            if (!string.IsNullOrEmpty(m.MatchType) &&
+                Enum.TryParse<HighlightMatchType>(m.MatchType, ignoreCase: true, out var parsed))
+                matchType = parsed;
+            else
+                matchType = m.IsRegex ? HighlightMatchType.Regex : HighlightMatchType.String;
+
+            _highlights.AddRule(m.Pattern, m.ForegroundColor, m.BackgroundColor,
+                                matchType, m.CaseSensitive, m.IsEnabled);
+        }
 
         foreach (var m in _persistence.LoadPresets(DataPath("presets.json")))
             _presets.Apply(new Genie4.Core.Presets.PresetRule

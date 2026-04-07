@@ -17,6 +17,9 @@ public partial class HighlightsPanel : UserControl
          "DarkCyan", "DarkMagenta", "DarkBlue", "Maroon", "DarkSlateGray",
          "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"];
 
+    private static readonly string[] MatchTypes =
+        ["String", "Line", "BeginsWith", "Regex"];
+
     private HighlightEngine? _engine;
 
     public HighlightsPanel()
@@ -26,6 +29,8 @@ public partial class HighlightsPanel : UserControl
         ColorBox.SelectedIndex = 0;
         BgColorBox.ItemsSource   = BgColors;
         BgColorBox.SelectedIndex = 0;
+        MatchTypeBox.ItemsSource   = MatchTypes;
+        MatchTypeBox.SelectedIndex = 0;
     }
 
     public void Initialize(HighlightEngine engine)
@@ -41,7 +46,7 @@ public partial class HighlightsPanel : UserControl
             .Select(r =>
             {
                 var bg = string.IsNullOrEmpty(r.BackgroundColor) ? "" : $"/{r.BackgroundColor}";
-                return $"{(r.IsEnabled ? "✓" : "✗")}  [{r.ForegroundColor}{bg}]  {r.Pattern}";
+                return $"{(r.IsEnabled ? "✓" : "✗")}  [{r.MatchType}]  [{r.ForegroundColor}{bg}]  {r.Pattern}";
             })
             .ToList();
     }
@@ -54,7 +59,7 @@ public partial class HighlightsPanel : UserControl
         PatternBox.Text              = rule.Pattern;
         ColorBox.SelectedItem        = rule.ForegroundColor;
         BgColorBox.SelectedItem      = string.IsNullOrEmpty(rule.BackgroundColor) ? "(none)" : rule.BackgroundColor;
-        IsRegexCheck.IsChecked       = rule.IsRegex;
+        MatchTypeBox.SelectedItem    = rule.MatchType.ToString();
         CaseSensitiveCheck.IsChecked = rule.CaseSensitive;
         EnabledCheck.IsChecked       = rule.IsEnabled;
         StatusText.Text              = string.Empty;
@@ -67,20 +72,21 @@ public partial class HighlightsPanel : UserControl
         var color         = ColorBox.SelectedItem as string ?? "Yellow";
         var bgRaw         = BgColorBox.SelectedItem as string ?? "(none)";
         var bgColor       = bgRaw == "(none)" ? string.Empty : bgRaw;
-        var isRegex       = IsRegexCheck.IsChecked == true;
+        var matchTypeStr  = MatchTypeBox.SelectedItem as string ?? "String";
+        var matchType     = Enum.TryParse<HighlightMatchType>(matchTypeStr, out var mt) ? mt : HighlightMatchType.String;
         var caseSensitive = CaseSensitiveCheck.IsChecked == true;
         var enabled       = EnabledCheck.IsChecked == true;
 
         if (string.IsNullOrEmpty(pattern)) { StatusText.Text = "Pattern is required."; return; }
 
-        if (isRegex)
+        if (matchType == HighlightMatchType.Regex)
         {
             try { _ = new Regex(pattern); }
             catch (RegexParseException ex) { StatusText.Text = $"Invalid regex: {ex.Message}"; return; }
         }
 
         _engine.RemoveRule(pattern);
-        _engine.AddRule(pattern, color, bgColor, isRegex, caseSensitive, enabled);
+        _engine.AddRule(pattern, color, bgColor, matchType, caseSensitive, enabled);
         Refresh();
         StatusText.Text = "Saved.";
     }
@@ -117,7 +123,7 @@ public partial class HighlightsPanel : UserControl
         PatternBox.Text              = string.Empty;
         ColorBox.SelectedIndex       = 0;
         BgColorBox.SelectedIndex     = 0;
-        IsRegexCheck.IsChecked       = false;
+        MatchTypeBox.SelectedIndex   = 0;
         CaseSensitiveCheck.IsChecked = false;
         EnabledCheck.IsChecked       = true;
         StatusText.Text              = string.Empty;

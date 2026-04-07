@@ -325,6 +325,15 @@ public partial class MainWindow : Window
 
         var expanded = _variables.Expand(input);
 
+        var echoLine = new RenderLine();
+        echoLine.Spans.Add(new AnsiSpan
+        {
+            Text       = expanded,
+            Foreground = _presets.GetForeground("inputuser"),
+            Background = _presets.GetBackground("inputuser"),
+        });
+        ApplyHighlightAndAppend(echoLine);
+
         if (!_aliases.TryProcess(expanded))
             _engine.ProcessInput(expanded);
     }

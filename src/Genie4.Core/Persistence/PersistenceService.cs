@@ -77,7 +77,7 @@ public sealed class PersistenceService
             Pattern = r.Pattern,
             ForegroundColor = r.ForegroundColor,
             BackgroundColor = r.BackgroundColor,
-            IsRegex = r.IsRegex,
+            MatchType = r.MatchType.ToString(),
             CaseSensitive = r.CaseSensitive,
             IsEnabled = r.IsEnabled
         });

@@ -20,6 +20,14 @@ public sealed class GslParser
     private string?       _pendingComponentId;
     private readonly StringBuilder _pendingComponentText = new();
 
+    // Accumulates inner text between <inv id="…"> … </inv>.
+    private string?       _pendingInvId;
+    private readonly StringBuilder _pendingInvText = new();
+
+    // Accumulates inner text between <spell> … </spell>.
+    private bool          _pendingSpellActive;
+    private readonly StringBuilder _pendingSpellText = new();
+
     // Stores the time attribute from <prompt time="…"> until </prompt> closes it.
     private int _pendingPromptTime;
 
@@ -99,6 +107,10 @@ public sealed class GslParser
                 // Route plain text into the component buffer when inside a <component> block
                 if (_pendingComponentId is not null)
                     _pendingComponentText.Append(c);
+                else if (_pendingInvId is not null)
+                    _pendingInvText.Append(c);
+                else if (_pendingSpellActive)
+                    _pendingSpellText.Append(c);
                 else
                     ctx.Text.Append(c);
             }
@@ -131,9 +143,21 @@ public sealed class GslParser
                     _pendingCompassDirs = null;
                     break;
                 case "component" when _pendingComponentId is not null:
+                case "left"      when _pendingComponentId == "lhand":
+                case "right"     when _pendingComponentId == "rhand":
                     ctx.Events.Add(new ComponentEvent(_pendingComponentId, _pendingComponentText.ToString().Trim()));
                     _pendingComponentId = null;
                     _pendingComponentText.Clear();
+                    break;
+                case "inv" when _pendingInvId is not null:
+                    ctx.Events.Add(new InvLineEvent(_pendingInvId, _pendingInvText.ToString().Trim()));
+                    _pendingInvId = null;
+                    _pendingInvText.Clear();
+                    break;
+                case "spell" when _pendingSpellActive:
+                    ctx.Events.Add(new SpellEvent(_pendingSpellText.ToString().Trim()));
+                    _pendingSpellActive = false;
+                    _pendingSpellText.Clear();
                     break;
                 case "prompt":
                     // Text content arrived via the char loop; emit the event now.
@@ -171,6 +195,23 @@ public sealed class GslParser
                 case "component":
                     _pendingComponentId = AttrFromRaw(fragment, "id");
                     _pendingComponentText.Clear();
+                    break;
+                case "left":
+                    _pendingComponentId = "lhand";
+                    _pendingComponentText.Clear();
+                    break;
+                case "right":
+                    _pendingComponentId = "rhand";
+                    _pendingComponentText.Clear();
+                    break;
+                case "inv":
+                    _pendingInvId = AttrFromRaw(fragment, "id");
+                    if (string.IsNullOrEmpty(_pendingInvId)) _pendingInvId = "inv";
+                    _pendingInvText.Clear();
+                    break;
+                case "spell":
+                    _pendingSpellActive = true;
+                    _pendingSpellText.Clear();
                     break;
                 case "prompt":
                     int.TryParse(AttrFromRaw(fragment, "time"), out _pendingPromptTime);
@@ -347,6 +388,10 @@ public sealed class GslParser
             case "openDialog":
             case "closeDialog":
             case "clearStream":
+            case "clearContainer":
+                ctx.Events.Add(new ClearContainerEvent(Attr(node, "id")));
+                break;
+
             case "nav":
             case "mode":
             case "settingsInfo":

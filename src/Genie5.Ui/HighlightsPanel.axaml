@@ -17,7 +17,7 @@
                SelectionChanged="OnSelectionChanged" />
 
       <Grid Grid.Column="1"
-            RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+            RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
             Margin="4,0,0,0">
         <TextBlock Grid.Row="0" Text="Pattern:" Margin="0,0,0,2" />
         <TextBox   Grid.Row="1" Name="PatternBox" Margin="0,0,0,8" />
@@ -25,14 +25,15 @@
         <ComboBox  Grid.Row="3" Name="ColorBox" Margin="0,0,0,8" HorizontalAlignment="Stretch" />
         <TextBlock Grid.Row="4" Text="Background color:" Margin="0,0,0,2" />
         <ComboBox  Grid.Row="5" Name="BgColorBox" Margin="0,0,0,8" HorizontalAlignment="Stretch" />
-        <CheckBox  Grid.Row="6" Name="IsRegexCheck"       Content="Is regex"       Margin="0,0,0,4" />
-        <CheckBox  Grid.Row="7" Name="CaseSensitiveCheck" Content="Case sensitive" Margin="0,0,0,4" />
-        <CheckBox  Grid.Row="8" Name="EnabledCheck"       Content="Enabled"        Margin="0,0,0,8" IsChecked="True" />
-        <StackPanel Grid.Row="9" Orientation="Horizontal" Spacing="4">
+        <TextBlock Grid.Row="6" Text="Match type:" Margin="0,0,0,2" />
+        <ComboBox  Grid.Row="7" Name="MatchTypeBox" Margin="0,0,0,8" HorizontalAlignment="Stretch" />
+        <CheckBox  Grid.Row="8" Name="CaseSensitiveCheck" Content="Case sensitive" Margin="0,0,0,4" />
+        <CheckBox  Grid.Row="9" Name="EnabledCheck"       Content="Enabled"        Margin="0,0,0,8" IsChecked="True" />
+        <StackPanel Grid.Row="10" Orientation="Horizontal" Spacing="4">
           <Button Content="Save"  Click="OnSave" />
           <Button Content="Clear" Click="OnClear" />
         </StackPanel>
-        <TextBlock Grid.Row="10" Name="StatusText" Margin="0,6,0,0" Foreground="Gray" FontStyle="Italic" />
+        <TextBlock Grid.Row="11" Name="StatusText" Margin="0,6,0,0" Foreground="Gray" FontStyle="Italic" />
       </Grid>
     </Grid>
 

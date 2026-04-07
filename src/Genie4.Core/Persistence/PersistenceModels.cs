@@ -27,7 +27,13 @@ public sealed class HighlightPersistenceModel
     public string Pattern { get; set; } = string.Empty;
     public string ForegroundColor { get; set; } = "Yellow";
     public string BackgroundColor { get; set; } = string.Empty;
+
+    /// <summary>"String" | "Line" | "BeginsWith" | "Regex". Empty falls back to IsRegex.</summary>
+    public string MatchType { get; set; } = string.Empty;
+
+    /// <summary>Legacy field; if true and MatchType is empty, treat as Regex; else String.</summary>
     public bool IsRegex { get; set; }
+
     public bool CaseSensitive { get; set; }
     public bool IsEnabled { get; set; } = true;
 }
