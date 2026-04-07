@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Dock.Model.Core;
 using Genie4.Core.Gsl;
+using Genie4.Core.Persistence;
 using Genie4.Core.Profiles;
 using Genie4.Core.Sge;
 
@@ -14,10 +17,18 @@ public partial class MainWindow : Window
     private readonly ScrollbackBuffer _scrollback = new();
     private readonly GameOutputViewModel _gameOutputVm;
     private readonly GameOutputViewModel _rawOutputVm;
+    private readonly GameOutputViewModel _logVm;
     private readonly RoomViewModel _roomVm = new();
+    private MapViewModel       _mapVm    = null!;
+    private MapView            _mapView  = null!;
+    private GenieDockFactory   _factory  = null!;
 
     // Sub-stream panels keyed by GSL stream id
     private readonly Dictionary<string, GameOutputViewModel> _streamVms = new();
+
+    // Tracks normal-state geometry so we don't persist maximized dimensions.
+    private int _restoreX, _restoreY;
+    private double _restoreWidth = 1280, _restoreHeight = 800;
 
     private readonly List<string> _history = new();
     private int _historyIndex = -1;
@@ -31,7 +42,8 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _gameOutputVm = new GameOutputViewModel();
-        _rawOutputVm  = new GameOutputViewModel("RawOutput", "Raw");
+        _rawOutputVm  = new GameOutputViewModel("RawOutput", "Raw",  canClose: true);
+        _logVm        = new GameOutputViewModel("Log",       "Log",  canClose: true);
 
         // Create a dockable panel for each sub-stream
         var streams = new (string id, string title)[]
@@ -44,27 +56,57 @@ public partial class MainWindow : Window
             ("familiar",   "Familiar"),
             ("percWindow", "Perception"),
         };
-        var streamVmArray = new GameOutputViewModel[streams.Length];
+        var streamVmArray = new GameOutputViewModel[streams.Length + 1];
         for (int i = 0; i < streams.Length; i++)
         {
-            var vm = new GameOutputViewModel(streams[i].id, streams[i].title);
+            var vm = new GameOutputViewModel(streams[i].id, streams[i].title, canClose: true);
             _streamVms[streams[i].id] = vm;
             streamVmArray[i] = vm;
         }
-
-        var factory = new GenieDockFactory(_gameOutputVm, _rawOutputVm, streamVmArray, _roomVm);
-        var layout  = factory.CreateLayout();
-        factory.InitLayout(layout);
-
-        MainDockControl.Factory = factory;
-        MainDockControl.Layout  = layout;
+        streamVmArray[streams.Length] = _logVm;
 
         InitializeEngines();
+
+        _mapVm   = new MapViewModel(_mapperEngine);
+        _mapView = new MapView();
+        _mapView.Attach(_mapVm);
+
+        _factory = new GenieDockFactory(_gameOutputVm, _rawOutputVm, streamVmArray, _roomVm, _mapVm);
+        var layout = _factory.CreateLayout();
+        _factory.InitLayout(layout);
+
+        MainDockControl.Factory = _factory;
+        MainDockControl.Layout  = layout;
 
         StatusBar.Attach(_gslGameState);
         _roomVm.Attach(_gslGameState);
 
+        BuildWindowsMenu();
+
         InputBox.KeyDown += OnInputKeyDown;
+
+        // Restore saved layout (window geometry + dock proportions).
+        var savedLayout = _persistence.LoadLayout(DataPath("layout.json"));
+        if (savedLayout != null) RestoreLayout(savedLayout);
+
+        // Track restore-state geometry whenever the window is in Normal state
+        // so we never persist maximized dimensions as the restore size.
+        PositionChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Normal)
+            {
+                _restoreX = Position.X;
+                _restoreY = Position.Y;
+            }
+        };
+        SizeChanged += (_, args) =>
+        {
+            if (WindowState == WindowState.Normal)
+            {
+                _restoreWidth  = args.NewSize.Width;
+                _restoreHeight = args.NewSize.Height;
+            }
+        };
 
         Closing += (_, _) => SaveData();
 
@@ -92,6 +134,18 @@ public partial class MainWindow : Window
             foreach (var span in parsed.Spans)
                 line.Spans.Add(span);
         }
+
+        // If any segment belongs to a preset with HighlightLine, colour the whole line.
+        foreach (var seg in segments)
+        {
+            if (!string.IsNullOrEmpty(seg.GslColor) && _presets.GetHighlightLine(seg.GslColor))
+            {
+                line = ApplyRangeHighlight(line,
+                    [(0, line.PlainText.Length)], seg.GslColor);
+                break;
+            }
+        }
+
         ApplyHighlightAndAppend(line);
     }
 
@@ -100,15 +154,118 @@ public partial class MainWindow : Window
         var rule = _highlights.Match(line.PlainText);
         if (rule != null)
         {
-            var highlighted = new RenderLine();
-            foreach (var span in line.Spans)
-                highlighted.Spans.Add(new AnsiSpan
-                    { Text = span.Text, Foreground = rule.ForegroundColor, Bold = span.Bold });
-            line = highlighted;
+            var ranges = rule.GetHighlightRanges(line.PlainText);
+            line = ApplyRangeHighlight(line, ranges, rule.ForegroundColor);
         }
 
         _scrollback.Add(line);
         _gameOutputVm.AppendLine(line);
+    }
+
+    // Colours only the characters within the given ranges; everything else keeps
+    // its original colour.  If ranges covers the entire line the result is the
+    // same as coloring every span (preserves the existing whole-line behaviour).
+    private static RenderLine ApplyRangeHighlight(
+        RenderLine line, IReadOnlyList<(int Start, int Length)> ranges, string color)
+    {
+        if (ranges.Count == 0) return line;
+
+        var plain = line.PlainText;
+
+        // Build a per-character boolean map of which positions should be coloured.
+        var isHl = new bool[plain.Length];
+        foreach (var (start, length) in ranges)
+            for (int i = start; i < start + length && i < plain.Length; i++)
+                isHl[i] = true;
+
+        // Walk spans, splitting at highlight-boundary transitions.
+        var result = new RenderLine();
+        int pos = 0;
+
+        foreach (var span in line.Spans)
+        {
+            int spanEnd = pos + span.Text.Length;
+            int segStart = pos;
+            bool segHl = pos < plain.Length && isHl[pos];
+
+            for (int i = pos; i <= spanEnd; i++)
+            {
+                bool curHl = i < plain.Length && isHl[i];
+                if (i == spanEnd || curHl != segHl)
+                {
+                    if (i > segStart)
+                    {
+                        result.Spans.Add(new AnsiSpan
+                        {
+                            Text       = span.Text.Substring(segStart - pos, i - segStart),
+                            Foreground = segHl ? color : span.Foreground,
+                            Bold       = span.Bold,
+                        });
+                    }
+                    segStart = i;
+                    segHl    = curHl;
+                }
+            }
+
+            pos = spanEnd;
+        }
+
+        return result;
+    }
+
+    // ── Layout persistence ────────────────────────────────────────────────────
+
+    private void SaveLayout() => SaveLayoutTo(DataPath("layout.json"));
+
+    private void SaveLayoutTo(string path)
+    {
+        var props = new Dictionary<string, double>();
+        CollectProportions(MainDockControl.Layout, props);
+
+        var state = new LayoutState
+        {
+            WindowState     = WindowState.ToString(),
+            WindowX         = _restoreX,
+            WindowY         = _restoreY,
+            WindowWidth     = _restoreWidth,
+            WindowHeight    = _restoreHeight,
+            DockProportions = props,
+        };
+
+        _persistence.SaveLayout(path, state);
+    }
+
+    private void RestoreLayout(LayoutState state)
+    {
+        // Apply geometry first so the OS restore-bounds are correct.
+        Position = new PixelPoint(state.WindowX, state.WindowY);
+        Width    = state.WindowWidth;
+        Height   = state.WindowHeight;
+
+        if (Enum.TryParse<WindowState>(state.WindowState, out var ws))
+            WindowState = ws;
+
+        ApplyProportions(MainDockControl.Layout, state.DockProportions);
+    }
+
+    private static void CollectProportions(IDockable? dockable, Dictionary<string, double> result)
+    {
+        if (dockable is null) return;
+        if (!string.IsNullOrEmpty(dockable.Id) && dockable.Proportion > 0)
+            result[dockable.Id] = dockable.Proportion;
+        if (dockable is IDock dock)
+            foreach (var child in dock.VisibleDockables ?? [])
+                CollectProportions(child, result);
+    }
+
+    private static void ApplyProportions(IDockable? dockable, Dictionary<string, double> saved)
+    {
+        if (dockable is null) return;
+        if (!string.IsNullOrEmpty(dockable.Id) && saved.TryGetValue(dockable.Id, out var p))
+            dockable.Proportion = p;
+        if (dockable is IDock dock)
+            foreach (var child in dock.VisibleDockables ?? [])
+                ApplyProportions(child, saved);
     }
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)
@@ -297,8 +454,153 @@ public partial class MainWindow : Window
 
     private void OnSettings(object? sender, RoutedEventArgs e)
     {
-        var config = new FormConfig(_aliases, _triggers, _highlights);
+        var config = new FormConfig(_aliases, _triggers, _highlights, _presets);
         config.Show();
+    }
+
+    // All panels that can be toggled, paired with the dock that owns them.
+    // Populated in BuildWindowsMenu after the factory is created.
+    private readonly List<(Dock.Model.Core.IDockable vm, Dock.Model.Core.IDock owner)> _toggleablePanels = new();
+
+    private void BuildWindowsMenu()
+    {
+        // Main-output dock panels
+        foreach (var vm in new Dock.Model.Core.IDockable[] { _gameOutputVm, _rawOutputVm, _logVm })
+        {
+            _toggleablePanels.Add((vm, _factory.StreamsDock!.Owner as Dock.Model.Core.IDock ?? _factory.StreamsDock));
+            var item = new MenuItem { Header = ((Dock.Model.Core.IDockable)vm).Title, Tag = vm };
+            item.Click += OnWindowItemClick;
+            WindowsMenu.Items.Add(item);
+        }
+
+        WindowsMenu.Items.Add(new Separator());
+
+        // Stream panels
+        foreach (var vm in _streamVms.Values)
+        {
+            _toggleablePanels.Add((vm, _factory.StreamsDock!));
+            var item = new MenuItem { Header = vm.Title, Tag = vm };
+            item.Click += OnWindowItemClick;
+            WindowsMenu.Items.Add(item);
+        }
+
+        WindowsMenu.Items.Add(new Separator());
+
+        // Right-panel dockables (Room + Map)
+        foreach (var vm in new Dock.Model.Core.IDockable[] { _roomVm, _mapVm })
+        {
+            _toggleablePanels.Add((vm, vm.Owner as Dock.Model.Core.IDock ?? _factory.StreamsDock!));
+            var item = new MenuItem { Header = vm.Title, Tag = vm };
+            item.Click += OnWindowItemClick;
+            WindowsMenu.Items.Add(item);
+        }
+    }
+
+    private void OnWindowsMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        foreach (var menuItem in WindowsMenu.Items.OfType<MenuItem>())
+        {
+            if (menuItem.Tag is not Dock.Model.Core.IDockable vm) continue;
+            var isVisible = vm.Owner is Dock.Model.Core.IDock dock &&
+                            dock.VisibleDockables?.Contains(vm) == true;
+            menuItem.Icon = new Avalonia.Controls.TextBlock
+            {
+                Text       = isVisible ? "✓" : " ",
+                Foreground = Avalonia.Media.Brushes.White,
+                Width      = 14,
+            };
+        }
+    }
+
+    private void OnWindowItemClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem item) return;
+        if (item.Tag is not Dock.Model.Core.IDockable vm) return;
+
+        var isVisible = vm.Owner is Dock.Model.Core.IDock ownerDock &&
+                        ownerDock.VisibleDockables?.Contains(vm) == true;
+
+        if (isVisible)
+        {
+            _factory!.RemoveDockable(vm, collapse: false);
+        }
+        else
+        {
+            // Restore to the correct dock based on which panel this belongs to
+            Dock.Model.Core.IDock targetDock;
+            if (vm == _gameOutputVm || vm == _rawOutputVm || vm == _logVm)
+                targetDock = _factory!.Find(d => d.Id == "MainOutput") as Dock.Model.Core.IDock
+                             ?? _factory!.StreamsDock!;
+            else if (vm == _roomVm)
+                targetDock = _factory!.Find(d => d.Id == "RoomPanel") as Dock.Model.Core.IDock
+                             ?? _factory!.StreamsDock!;
+            else if (vm == _mapVm)
+                targetDock = _factory!.Find(d => d.Id == "MapPanel") as Dock.Model.Core.IDock
+                             ?? _factory!.StreamsDock!;
+            else
+                targetDock = _factory!.StreamsDock!;
+
+            _factory!.AddDockable(targetDock, vm);
+            _factory!.SetActiveDockable(vm);
+        }
+    }
+
+    private async void OnMenuSaveLayoutAs(object? sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title           = "Save Layout As",
+            DefaultExtension = "json",
+            Filters          = [new FileDialogFilter { Name = "Layout files", Extensions = ["json"] }],
+            InitialFileName  = "layout.json",
+        };
+
+        var path = await dialog.ShowAsync(this);
+        if (string.IsNullOrEmpty(path)) return;
+
+        SaveLayoutTo(path);
+    }
+
+    private async void OnMenuLoadLayout(object? sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title       = "Load Layout",
+            AllowMultiple = false,
+            Filters       = [new FileDialogFilter { Name = "Layout files", Extensions = ["json"] }],
+        };
+
+        var paths = await dialog.ShowAsync(this);
+        if (paths is null || paths.Length == 0) return;
+
+        var state = _persistence.LoadLayout(paths[0]);
+        if (state != null) RestoreLayout(state);
+    }
+
+    private async void OnMenuImportMaps(object? sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = "Select folder containing Genie4 .xml map files" };
+        var dir = await dialog.ShowAsync(this);
+        if (string.IsNullOrEmpty(dir)) return;
+
+        var zones = Genie4.Core.Mapper.Genie4MapImporter.ImportDirectory(dir);
+        if (zones.Count == 0)
+        {
+            AppendOutput("[mapper] No .xml map files found in that folder.");
+            return;
+        }
+
+        var mapsDir = DataPath("maps");
+        foreach (var zone in zones)
+            _mapRepo.Save(Path.Combine(mapsDir, zone.Name + ".json"), zone);
+
+        AppendOutput($"[mapper] Imported {zones.Count} map(s) to {mapsDir}");
+    }
+
+    private void OnMenuToggleMapper(object? sender, RoutedEventArgs e)
+    {
+        _mapperEngine.IsEnabled = !_mapperEngine.IsEnabled;
+        AppendOutput($"[mapper] Automapper {(_mapperEngine.IsEnabled ? "enabled" : "disabled")}");
     }
 
     private void OnMenuExit(object? sender, RoutedEventArgs e) => Close();

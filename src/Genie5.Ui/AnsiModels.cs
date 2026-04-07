@@ -4,6 +4,7 @@ public sealed class AnsiSpan
 {
     public string Text { get; set; } = "";
     public string Foreground { get; set; } = "Default";
+    public string Background { get; set; } = "";
     public bool Bold { get; set; }
 }
 

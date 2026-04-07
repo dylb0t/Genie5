@@ -143,10 +143,6 @@ public sealed class GslGameState
                     }
                     break;
 
-                case RoomObjectEvent e:
-                    RoomObjects = e.Text; 
-                    break;
-
                 case PresetEvent e when e.PresetId == "roomdesc":
                     if (!string.IsNullOrWhiteSpace(e.Text))
                         RoomDescription = e.Text;
@@ -161,10 +157,6 @@ public sealed class GslGameState
                         case "spirit":        Spirit        = e.Value; break;
                         case "concentration": Concentration = e.Value; break;
                     }
-                    break;
-
-                case StowedInventoryEvent e:
-                    CurrentStream = "inv";
                     break;
             }
         }

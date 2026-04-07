@@ -10,6 +10,9 @@
     <DataTemplate DataType="local:RoomViewModel">
       <local:RoomView />
     </DataTemplate>
+    <DataTemplate DataType="local:MapViewModel">
+      <local:MapView />
+    </DataTemplate>
   </Application.DataTemplates>
 
   <Application.Styles>

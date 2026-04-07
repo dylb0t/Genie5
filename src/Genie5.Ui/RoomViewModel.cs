@@ -38,7 +38,7 @@ public sealed class RoomViewModel : Document
     {
         Id       = "Room";
         Title    = "Room";
-        CanClose = false;
+        CanClose = true;
         CanPin   = false;
     }
 

@@ -4,7 +4,7 @@
              xmlns:conv="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia"
              x:Class="Genie5.Ui.RoomView"
              x:DataType="local:RoomViewModel"
-             FontFamily="Cascadia Mono,Consolas,Courier New,monospace"
+             FontFamily="Verdana,Cascadia Mono,Consolas,Courier New,monospace"
              FontSize="12"
              Background="#141414">
 

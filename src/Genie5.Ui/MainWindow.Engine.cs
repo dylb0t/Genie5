@@ -4,6 +4,7 @@ using Genie4.Core.Commanding;
 using Genie4.Core.Config;
 using Genie4.Core.Gsl;
 using Genie4.Core.Highlights;
+using Genie4.Core.Mapper;
 using Genie4.Core.Networking;
 using Genie4.Core.Persistence;
 using Genie4.Core.Profiles;
@@ -22,12 +23,19 @@ public partial class MainWindow
     private AliasEngine _aliases = null!;
     private VariableEngine _variables = null!;
     internal HighlightEngine _highlights = null!;
-    internal readonly GslParser    _gslParser    = new();
+    internal Genie4.Core.Presets.PresetEngine _presets = null!;
+    internal GslParser    _gslParser    = null!;
     internal readonly GslGameState _gslGameState = new();
 
     private LocalDirectoryService _dirService = null!;
     private readonly PersistenceService _persistence = new();
     internal readonly ProfileStore _profiles = new();
+    internal AutoMapperEngine _mapperEngine = null!;
+    private readonly MapZoneRepository _mapRepo = new();
+
+    // Prompt suppression: only show the prompt when output or a command preceded it.
+    private bool _outputSinceLastPrompt  = false;
+    private bool _commandSinceLastPrompt = false;
 
     private string DataPath(string file)
         => Path.Combine(_dirService.Current.BasePath, file);
@@ -50,8 +58,15 @@ public partial class MainWindow
         _aliases    = new AliasEngine(_engine);
         _variables  = new VariableEngine(_engine);
         _highlights = new HighlightEngine();
+        _presets    = new Genie4.Core.Presets.PresetEngine();
+        _gslParser  = new GslParser(_presets);
 
         LoadData();
+
+        var defaultZonePath = DataPath(Path.Combine("maps", "default.json"));
+        var defaultZone = _mapRepo.Load(defaultZonePath) ?? new MapZone { Name = "Default" };
+        _mapperEngine = new AutoMapperEngine(defaultZone);
+        _mapperEngine.Attach(_gslGameState);
 
         _client.LineReceived += line =>
         {
@@ -66,8 +81,31 @@ public partial class MainWindow
 
                 _gslGameState.Apply(events);
 
+                // Duplicate speech to the Log panel (without suppressing main output).
+                foreach (var ev in events)
+                {
+                    if (ev is PresetEvent { PresetId: "speech" or "whispers" } pe)
+                    {
+                        var logColor = pe.PresetId == "speech" ? "Yellow" : "Cyan";
+                        var logLine  = new RenderLine();
+                        logLine.Spans.Add(new AnsiSpan { Text = pe.Text, Foreground = logColor });
+                        _logVm.AppendLine(logLine);
+                    }
+                }
+
                 var plainText = string.Concat(segments.Select(s => s.Text));
                 if (string.IsNullOrWhiteSpace(plainText)) return;
+
+                // Suppress repeated prompts: only show the prompt line when output
+                // or a command has occurred since the last one.
+                bool isPrompt = events.Any(ev => ev is PromptEvent);
+                if (isPrompt)
+                {
+                    var show = _outputSinceLastPrompt || _commandSinceLastPrompt;
+                    _outputSinceLastPrompt  = false;
+                    _commandSinceLastPrompt = false;
+                    if (!show) return;
+                }
 
                 // Route to sub-stream panel when in a named stream.
                 // Unknown named streams (e.g. "room") are suppressed — their data
@@ -75,6 +113,7 @@ public partial class MainWindow
                 var stream = _gslGameState.CurrentStream;
                 if (string.IsNullOrEmpty(stream))
                 {
+                    if (!isPrompt) _outputSinceLastPrompt = true;
                     AppendSegments(segments);
                     _triggers.ProcessLine(plainText);
                 }
@@ -113,6 +152,15 @@ public partial class MainWindow
 
         foreach (var m in _persistence.LoadHighlights(DataPath("highlights.json")))
             _highlights.AddRule(m.Pattern, m.ForegroundColor, m.IsRegex, m.CaseSensitive, m.IsEnabled);
+
+        foreach (var m in _persistence.LoadPresets(DataPath("presets.json")))
+            _presets.Apply(new Genie4.Core.Presets.PresetRule
+            {
+                Id              = m.Id,
+                ForegroundColor = m.ForegroundColor,
+                BackgroundColor = m.BackgroundColor,
+                HighlightLine   = m.HighlightLine,
+            });
     }
 
     internal void SaveData()
@@ -120,7 +168,10 @@ public partial class MainWindow
         _persistence.SaveAliases(DataPath("aliases.json"), _aliases.Aliases);
         _persistence.SaveTriggers(DataPath("triggers.json"), _triggers.Triggers);
         _persistence.SaveHighlights(DataPath("highlights.json"), _highlights.Rules);
+        _persistence.SavePresets(DataPath("presets.json"), _presets);
         _profiles.Save(ProfilesPath);
+        _mapRepo.Save(DataPath(Path.Combine("maps", "default.json")), _mapperEngine.ActiveZone);
+        SaveLayout();
     }
 
     private sealed class UiHost : ICommandHost
@@ -133,7 +184,11 @@ public partial class MainWindow
             => Avalonia.Threading.Dispatcher.UIThread.Post(() => _window.AppendOutput("[echo] " + text));
 
         public void SendToGame(string text, bool userInput = false, string origin = "")
-            => _ = _window._client.SendAsync(text);
+        {
+            _window._mapperEngine?.OnCommandSent(text);
+            _window._commandSinceLastPrompt = true;
+            _ = _window._client.SendAsync(text);
+        }
 
         public void RunScript(string text)
             => _window.AppendOutput("[script] " + text);

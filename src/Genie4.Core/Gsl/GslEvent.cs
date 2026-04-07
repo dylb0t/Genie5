@@ -50,9 +50,3 @@ public sealed record VitalsEvent(string Id, int Value) : GslEvent;
 
 /// <summary><component id="room desc">...</component> — in-place component update.</summary>
 public sealed record ComponentEvent(string Id, string Text) : GslEvent;
-
-/// <summary><roomObjects id="room objs">...</component> — in-place component update.</summary>
-public sealed record RoomObjectEvent(string Text) : GslEvent;
-
-/// <summary><inv id="stow">...</component> — in-place sowed inventory update.</summary>
-public sealed record StowedInventoryEvent(string Text) : GslEvent;

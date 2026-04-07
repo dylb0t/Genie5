@@ -37,13 +37,13 @@
       </MenuItem>
 
       <MenuItem Header="_Layout">
-        <MenuItem Header="_Load Layout..."         IsEnabled="False" />
-        <MenuItem Header="Save Layout _As..."      IsEnabled="False" />
+        <MenuItem Header="_Load Layout..."         Click="OnMenuLoadLayout" />
+        <MenuItem Header="Save Layout _As..."      Click="OnMenuSaveLayoutAs" />
         <Separator />
         <MenuItem Header="_Always On Top"          IsEnabled="False" />
       </MenuItem>
 
-      <MenuItem Header="_Windows" />
+      <MenuItem Header="_Windows" Name="WindowsMenu" SubmenuOpened="OnWindowsMenuOpened" />
 
       <MenuItem Header="_Script">
         <MenuItem Header="Script _Explorer..."     IsEnabled="False" />
@@ -54,7 +54,9 @@
       </MenuItem>
 
       <MenuItem Header="_AutoMapper">
-        <MenuItem Header="_Show Window"            IsEnabled="False" />
+        <MenuItem Header="_Import Genie4 Maps..."  Click="OnMenuImportMaps" />
+        <Separator />
+        <MenuItem Header="_Enable Automapper"      Click="OnMenuToggleMapper" />
       </MenuItem>
 
       <MenuItem Header="_Plugins">

@@ -45,15 +45,18 @@ public partial class GameOutputView : UserControl
 
     private void RenderLine(RenderLine parsed)
     {
-        var block = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var block = new SelectableTextBlock { TextWrapping = TextWrapping.Wrap };
 
         foreach (var span in parsed.Spans)
         {
-            block.Inlines!.Add(new Run(span.Text)
+            var run = new Run(span.Text)
             {
                 Foreground = ToBrush(span.Foreground),
-                FontWeight = span.Bold ? FontWeight.Bold : FontWeight.Normal
-            });
+                FontWeight = span.Bold ? FontWeight.Bold : FontWeight.Normal,
+            };
+            if (!string.IsNullOrEmpty(span.Background))
+                run.Background = ToBrush(span.Background);
+            block.Inlines!.Add(run);
         }
 
         OutputPanel.Children.Add(block);
@@ -63,16 +66,38 @@ public partial class GameOutputView : UserControl
             DispatcherPriority.Loaded);
     }
 
-    private static IBrush ToBrush(string color) => color switch
+    private static readonly Dictionary<string, IBrush> BrushCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private static IBrush ToBrush(string color)
     {
-        "Black"   => Brushes.DimGray,       // pure black invisible on dark bg
-        "Red"     => Brushes.IndianRed,
-        "Green"   => Brushes.LightGreen,
-        "Yellow"  => Brushes.Khaki,
-        "Blue"    => Brushes.CornflowerBlue,
-        "Magenta" => Brushes.Orchid,
-        "Cyan"    => Brushes.PaleTurquoise,
-        "White"   => Brushes.WhiteSmoke,
-        _         => Brushes.LightGray      // Default
-    };
+        if (string.IsNullOrEmpty(color) || color == "Default")
+            return Brushes.LightGray;
+
+        // ANSI names mapped to readable equivalents on a dark background
+        switch (color)
+        {
+            case "Black":   return Brushes.DimGray;
+            case "Red":     return Brushes.IndianRed;
+            case "Green":   return Brushes.LightGreen;
+            case "Yellow":  return Brushes.Khaki;
+            case "Blue":    return Brushes.CornflowerBlue;
+            case "Magenta": return Brushes.Orchid;
+            case "Cyan":    return Brushes.PaleTurquoise;
+            case "White":   return Brushes.WhiteSmoke;
+        }
+
+        if (BrushCache.TryGetValue(color, out var cached))
+            return cached;
+
+        try
+        {
+            var brush = (IBrush)Brush.Parse(color);
+            BrushCache[color] = brush;
+            return brush;
+        }
+        catch
+        {
+            return Brushes.LightGray;
+        }
+    }
 }

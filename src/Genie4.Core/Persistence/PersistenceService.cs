@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Genie4.Core.Aliases;
 using Genie4.Core.Highlights;
+using Genie4.Core.Presets;
 using Genie4.Core.Triggers;
 using Genie4.Core.Variables;
 
@@ -85,5 +86,34 @@ public sealed class PersistenceService
     {
         if (!File.Exists(path)) return new();
         return JsonSerializer.Deserialize<List<HighlightPersistenceModel>>(File.ReadAllText(path)) ?? new();
+    }
+
+    public void SavePresets(string path, PresetEngine engine)
+    {
+        var data = engine.Presets.Values.Select(r => new PresetPersistenceModel
+        {
+            Id              = r.Id,
+            ForegroundColor = r.ForegroundColor,
+            BackgroundColor = r.BackgroundColor,
+            HighlightLine   = r.HighlightLine,
+        });
+        File.WriteAllText(path, JsonSerializer.Serialize(data, _options));
+    }
+
+    public List<PresetPersistenceModel> LoadPresets(string path)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<List<PresetPersistenceModel>>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
+    }
+
+    public void SaveLayout(string path, LayoutState state)
+        => File.WriteAllText(path, JsonSerializer.Serialize(state, _options));
+
+    public LayoutState? LoadLayout(string path)
+    {
+        if (!File.Exists(path)) return null;
+        try { return JsonSerializer.Deserialize<LayoutState>(File.ReadAllText(path)); }
+        catch { return null; }
     }
 }

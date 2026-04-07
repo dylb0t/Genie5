@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Genie5.Ui.PresetsPanel">
+
+  <Grid ColumnDefinitions="200,*" Margin="6">
+
+    <!-- Left: list of presets -->
+    <ListBox Name="PresetList"
+             Grid.Column="0"
+             Margin="0,0,6,0"
+             SelectionChanged="OnSelectionChanged" />
+
+    <!-- Right: editor -->
+    <StackPanel Grid.Column="1" Spacing="8">
+
+      <TextBlock Text="Preset ID" FontWeight="Bold" />
+      <TextBlock Name="IdLabel" Foreground="Gray" />
+
+      <TextBlock Text="Foreground Color" FontWeight="Bold" />
+      <ComboBox Name="FgColorBox" Width="180" HorizontalAlignment="Left" />
+
+      <TextBlock Text="Background Color" FontWeight="Bold" />
+      <ComboBox Name="BgColorBox" Width="180" HorizontalAlignment="Left" />
+
+      <CheckBox Name="HighlightLineCheck" Content="Highlight entire line" />
+
+      <Border Name="PreviewBorder" Height="28" Width="180"
+              HorizontalAlignment="Left"
+              CornerRadius="3" Padding="6,4">
+        <TextBlock Name="PreviewText" Text="Preview text" />
+      </Border>
+
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="Apply"   Click="OnApply" />
+        <Button Content="Reset"   Click="OnReset" />
+      </StackPanel>
+
+      <TextBlock Name="StatusText" Foreground="Gray" FontStyle="Italic" />
+
+    </StackPanel>
+  </Grid>
+
+</UserControl>

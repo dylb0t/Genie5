@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
+using Genie4.Core.Presets;
 
 namespace Genie4.Core.Gsl;
 
@@ -19,14 +20,15 @@ public sealed class GslParser
     private string?       _pendingComponentId;
     private readonly StringBuilder _pendingComponentText = new();
 
-    private static readonly Dictionary<string, string> PresetColors = new()
+    // Stores the time attribute from <prompt time="…"> until </prompt> closes it.
+    private int _pendingPromptTime;
+
+    private readonly PresetEngine _presets;
+
+    public GslParser(PresetEngine presets)
     {
-        ["roomdesc"]  = string.Empty,
-        ["whispers"]  = "Cyan",
-        ["thoughts"]  = "Magenta",
-        ["speech"]    = "Yellow",
-        ["creatures"] = string.Empty,
-    };
+        _presets = presets;
+    }
 
     public (IReadOnlyList<GslSegment> Segments, IReadOnlyList<GslEvent> Events) ParseLine(string rawLine)
     {
@@ -117,24 +119,76 @@ public sealed class GslParser
 
     private void ProcessFragment(string fragment, ParseContext ctx)
     {
-        // Closing tags like </compass> produce invalid XML when wrapped — handle them first.
+        // ── Closing tags ─────────────────────────────────────────────────────
+        // These cannot be wrapped in <r>…</r> (invalid XML), so handle first.
         if (fragment.StartsWith("</"))
         {
             var tagName = fragment[2..].TrimEnd('>').Trim();
-            if (tagName == "compass" && _pendingCompassDirs is not null)
+            switch (tagName)
             {
-                ctx.Events.Add(new CompassEvent(_pendingCompassDirs));
-                _pendingCompassDirs = null;
-            }
-            else if (tagName == "component" && _pendingComponentId is not null)
-            {
-                ctx.Events.Add(new ComponentEvent(_pendingComponentId, _pendingComponentText.ToString().Trim()));
-                _pendingComponentId = null;
-                _pendingComponentText.Clear();
+                case "compass" when _pendingCompassDirs is not null:
+                    ctx.Events.Add(new CompassEvent(_pendingCompassDirs));
+                    _pendingCompassDirs = null;
+                    break;
+                case "component" when _pendingComponentId is not null:
+                    ctx.Events.Add(new ComponentEvent(_pendingComponentId, _pendingComponentText.ToString().Trim()));
+                    _pendingComponentId = null;
+                    _pendingComponentText.Clear();
+                    break;
+                case "prompt":
+                    // Text content arrived via the char loop; emit the event now.
+                    ctx.Events.Add(new PromptEvent(ctx.Text.ToString(), _pendingPromptTime));
+                    _pendingPromptTime = 0;
+                    // Leave ctx.Text so the prompt char ">." renders in the output.
+                    break;
             }
             return;
         }
 
+        // ── Bare opening tags (not self-closing) ─────────────────────────────
+        // A bare opening tag like <component id='room objs'> has no matching
+        // close inside the fragment, so wrapping it in <r>…</r> is invalid XML
+        // and XmlDocument.Load throws.  Extract the tag name and attributes
+        // directly and handle the state transitions here.
+        if (!fragment.TrimEnd().EndsWith("/>"))
+        {
+            var nameMatch = Regex.Match(fragment, @"^<([\w:-]+)");
+            if (!nameMatch.Success) return;
+
+            switch (nameMatch.Groups[1].Value)
+            {
+                case "pushBold":
+                    ctx.Flush();
+                    ctx.Bold = true;
+                    break;
+                case "popBold":
+                    ctx.Flush();
+                    ctx.Bold = false;
+                    break;
+                case "compass":
+                    _pendingCompassDirs = new List<string>();
+                    break;
+                case "component":
+                    _pendingComponentId = AttrFromRaw(fragment, "id");
+                    _pendingComponentText.Clear();
+                    break;
+                case "prompt":
+                    int.TryParse(AttrFromRaw(fragment, "time"), out _pendingPromptTime);
+                    break;
+                case "pushStream":
+                    ctx.Events.Add(new PushStreamEvent(AttrFromRaw(fragment, "id")));
+                    break;
+                case "popStream":
+                    ctx.Events.Add(new PopStreamEvent());
+                    break;
+                case "a":
+                    // Text content comes through the char loop; nothing to do here.
+                    break;
+            }
+            return;
+        }
+
+        // ── Self-closing tags — safe to parse with XmlDocument ───────────────
         XmlDocument doc;
         try
         {
@@ -169,7 +223,8 @@ public sealed class GslParser
                 if (pid == "whisper") pid = "whispers";
                 if (pid == "thought") pid = "thoughts";
                 ctx.Flush();
-                var color = PresetColors.GetValueOrDefault(pid, string.Empty);
+                var rule  = _presets.Get(pid);
+                var color = rule?.ForegroundColor ?? string.Empty;
                 ctx.Events.Add(new PresetEvent(pid, ptxt));
                 ctx.Segments.Add(new GslSegment(ptxt, ctx.Bold, color));
                 break;
@@ -186,9 +241,11 @@ public sealed class GslParser
                 break;
 
             case "prompt":
+                // Self-closing prompt (rare) — emit directly.
                 int.TryParse(Attr(node, "time"), out int gt);
                 ctx.Events.Add(new PromptEvent(node.InnerText, gt));
-                ctx.Text.Append(node.InnerText);
+                if (!string.IsNullOrEmpty(node.InnerText))
+                    ctx.Text.Append(node.InnerText);
                 break;
 
             case "spell":
@@ -200,13 +257,8 @@ public sealed class GslParser
                 break;
 
             case "compass":
-                // Self-closing <compass/> means no exits.
-                // Opening <compass> (no '/') starts accumulation; dirs arrive as
-                // separate fragments, and </compass> triggers the event (see above).
-                if (fragment.Contains("/>"))
-                    ctx.Events.Add(new CompassEvent(new List<string>()));
-                else
-                    _pendingCompassDirs = new List<string>();
+                // Self-closing <compass/> — no exits.
+                ctx.Events.Add(new CompassEvent(new List<string>()));
                 break;
 
             case "dir":
@@ -256,16 +308,34 @@ public sealed class GslParser
                 break;
 
             case "component":
-                // Opening tag — start capturing inner text at the parser level
-                // so that multi-line component bodies survive line boundaries.
-                _pendingComponentId = Attr(node, "id");
-                _pendingComponentText.Clear();
-                break;
-
-            case "inv":
+                // Self-closing <component id="..."/> — empty value, still emit event.
+                ctx.Events.Add(new ComponentEvent(Attr(node, "id"), string.Empty));
                 break;
 
             case "style":
+            {
+                ctx.Flush();
+                var sid = Attr(node, "id").ToLowerInvariant();
+                // Normalise camelCase ids sent by the server to match preset keys
+                sid = sid switch
+                {
+                    "roomname"        => "roomname",
+                    "roomdesc"        => "roomdesc",
+                    "roomobjs"        => "roomobjs",
+                    "roomplayers"     => "roomplayers",
+                    "roomextras"      => "roomextras",
+                    _ => sid
+                };
+                if (string.IsNullOrEmpty(sid))
+                    ctx.PresetColor = string.Empty;
+                else
+                {
+                    var fg = _presets.Get(sid)?.ForegroundColor ?? string.Empty;
+                    ctx.PresetColor = fg == "Default" ? string.Empty : fg;
+                }
+                break;
+            }
+
             case "resource":
             case "dialogData":
             case "openDialog":
@@ -277,6 +347,7 @@ public sealed class GslParser
             case "settings":
             case "vars":
             case "launchURL":
+            case "inv":
                 break;
 
             default:
@@ -316,6 +387,12 @@ public sealed class GslParser
 
     private static string Attr(XmlNode node, string name)
         => node.Attributes?.GetNamedItem(name)?.Value ?? string.Empty;
+
+    private static string AttrFromRaw(string fragment, string name)
+    {
+        var m = Regex.Match(fragment, name + @"\s*=\s*[""']([^""']*)[""']");
+        return m.Success ? m.Groups[1].Value : string.Empty;
+    }
 
     private static string StripTags(string s)
         => Regex.Replace(s, "<[^>]*>", string.Empty);

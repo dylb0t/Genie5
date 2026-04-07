@@ -11,11 +11,11 @@ public sealed class GameOutputViewModel : Document
 
     public GameOutputViewModel() : this("GameOutput", "Game Output") { }
 
-    public GameOutputViewModel(string id, string title)
+    public GameOutputViewModel(string id, string title, bool canClose = false)
     {
         Id = id;
         Title = title;
-        CanClose = false;
+        CanClose = canClose;
         CanPin = false;
     }
 

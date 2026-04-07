@@ -14,18 +14,22 @@ public sealed class GenieDockFactory : Factory
     private readonly GameOutputViewModel   _rawVm;
     private readonly GameOutputViewModel[] _streamVms;
     private readonly RoomViewModel         _roomVm;
+    private readonly MapViewModel          _mapVm;
 
-    private IRootDock? _rootDock;
+    private IRootDock?   _rootDock;
+    public  DocumentDock? StreamsDock { get; private set; }
 
     public GenieDockFactory(GameOutputViewModel mainVm,
                             GameOutputViewModel rawVm,
                             GameOutputViewModel[] streamVms,
-                            RoomViewModel roomVm)
+                            RoomViewModel roomVm,
+                            MapViewModel mapVm)
     {
         _mainVm    = mainVm;
         _rawVm     = rawVm;
         _streamVms = streamVms;
         _roomVm    = roomVm;
+        _mapVm     = mapVm;
     }
 
     public override IRootDock CreateLayout()
@@ -46,7 +50,7 @@ public sealed class GenieDockFactory : Factory
         foreach (var vm in _streamVms)
             streamDockables.Add(vm);
 
-        var streamsDock = new DocumentDock
+        StreamsDock = new DocumentDock
         {
             Id                = "Streams",
             Title             = "Streams",
@@ -56,6 +60,7 @@ public sealed class GenieDockFactory : Factory
             VisibleDockables  = streamDockables,
             ActiveDockable    = _streamVms.Length > 0 ? _streamVms[0] : null
         };
+        var streamsDock = StreamsDock;
 
         var leftPanel = new ProportionalDock
         {
@@ -69,16 +74,39 @@ public sealed class GenieDockFactory : Factory
                 streamsDock)
         };
 
-        // Right: room panel
+        // Right panel: room info (top) + map canvas (bottom)
         var roomDock = new DocumentDock
         {
             Id                = "RoomPanel",
             Title             = "Room",
             IsCollapsable     = false,
             CanCreateDocument = false,
-            Proportion        = 0.28,
+            Proportion        = 0.40,
             VisibleDockables  = CreateList<IDockable>(_roomVm),
             ActiveDockable    = _roomVm
+        };
+
+        var mapDock = new DocumentDock
+        {
+            Id                = "MapPanel",
+            Title             = "Map",
+            IsCollapsable     = false,
+            CanCreateDocument = false,
+            Proportion        = 0.60,
+            VisibleDockables  = CreateList<IDockable>(_mapVm),
+            ActiveDockable    = _mapVm
+        };
+
+        var rightPanel = new ProportionalDock
+        {
+            Id               = "RightPanel",
+            Orientation      = Orientation.Vertical,
+            IsCollapsable    = false,
+            Proportion       = 0.28,
+            VisibleDockables = CreateList<IDockable>(
+                roomDock,
+                new ProportionalDockSplitter { Id = "RoomMapSplitter" },
+                mapDock)
         };
 
         var rootLayout = new ProportionalDock
@@ -89,7 +117,7 @@ public sealed class GenieDockFactory : Factory
             VisibleDockables = CreateList<IDockable>(
                 leftPanel,
                 new ProportionalDockSplitter { Id = "RoomSplitter" },
-                roomDock)
+                rightPanel)
         };
 
         var root = CreateRootDock();
@@ -110,6 +138,7 @@ public sealed class GenieDockFactory : Factory
             [_mainVm.Id] = () => _mainVm,
             [_rawVm.Id]  = () => _rawVm,
             [_roomVm.Id] = () => _roomVm,
+            [_mapVm.Id]  = () => _mapVm,
         };
         foreach (var vm in _streamVms)
             ContextLocator[vm.Id] = () => vm;

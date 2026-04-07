@@ -6,9 +6,9 @@ public sealed class HighlightEngine
 
     public IReadOnlyList<HighlightRule> Rules => _rules;
 
-    public HighlightRule AddRule(string pattern, string foregroundColor, bool isRegex = false, bool caseSensitive = false, bool isEnabled = true)
+    public HighlightRule AddRule(string pattern, string foregroundColor, string backgroundColor = "", bool isRegex = false, bool caseSensitive = false, bool isEnabled = true)
     {
-        var rule = new HighlightRule(pattern, foregroundColor, isRegex, caseSensitive, isEnabled);
+        var rule = new HighlightRule(pattern, foregroundColor, backgroundColor, isRegex, caseSensitive, isEnabled);
         _rules.Add(rule);
         return rule;
     }
