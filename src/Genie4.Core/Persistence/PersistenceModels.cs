@@ -26,6 +26,7 @@ public sealed class HighlightPersistenceModel
 {
     public string Pattern { get; set; } = string.Empty;
     public string ForegroundColor { get; set; } = "Yellow";
+    public string BackgroundColor { get; set; } = string.Empty;
     public bool IsRegex { get; set; }
     public bool CaseSensitive { get; set; }
     public bool IsEnabled { get; set; } = true;

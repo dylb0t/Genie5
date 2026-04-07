@@ -8,5 +8,6 @@ namespace Genie4.Core.Gsl;
 public sealed record GslSegment(
     string Text,
     bool   GslBold,
-    string GslColor   // "" = no override, otherwise a colour name e.g. "Cyan"
+    string GslColor,      // "" = no override, otherwise a colour name e.g. "Cyan"
+    string GslBackground = "" // "" = no override
 );

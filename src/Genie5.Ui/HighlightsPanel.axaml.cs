@@ -8,7 +8,14 @@ namespace Genie5.Ui;
 public partial class HighlightsPanel : UserControl
 {
     private static readonly string[] Colors =
-        ["Yellow", "Red", "Green", "Cyan", "Magenta", "Blue", "White"];
+        ["Yellow", "Red", "Green", "Cyan", "Magenta", "Blue", "White",
+         "IndianRed", "LightGreen", "Khaki", "CornflowerBlue", "Orchid",
+         "PaleTurquoise", "WhiteSmoke", "Silver", "Gray", "Black"];
+
+    private static readonly string[] BgColors =
+        ["(none)", "Black", "DimGray", "Navy", "DarkRed", "DarkGreen",
+         "DarkCyan", "DarkMagenta", "DarkBlue", "Maroon", "DarkSlateGray",
+         "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"];
 
     private HighlightEngine? _engine;
 
@@ -17,6 +24,8 @@ public partial class HighlightsPanel : UserControl
         InitializeComponent();
         ColorBox.ItemsSource   = Colors;
         ColorBox.SelectedIndex = 0;
+        BgColorBox.ItemsSource   = BgColors;
+        BgColorBox.SelectedIndex = 0;
     }
 
     public void Initialize(HighlightEngine engine)
@@ -29,7 +38,11 @@ public partial class HighlightsPanel : UserControl
     {
         if (_engine is null) return;
         ItemsList.ItemsSource = _engine.Rules
-            .Select(r => $"{(r.IsEnabled ? "✓" : "✗")}  [{r.ForegroundColor}]  {r.Pattern}")
+            .Select(r =>
+            {
+                var bg = string.IsNullOrEmpty(r.BackgroundColor) ? "" : $"/{r.BackgroundColor}";
+                return $"{(r.IsEnabled ? "✓" : "✗")}  [{r.ForegroundColor}{bg}]  {r.Pattern}";
+            })
             .ToList();
     }
 
@@ -40,6 +53,7 @@ public partial class HighlightsPanel : UserControl
         var rule = _engine.Rules[idx];
         PatternBox.Text              = rule.Pattern;
         ColorBox.SelectedItem        = rule.ForegroundColor;
+        BgColorBox.SelectedItem      = string.IsNullOrEmpty(rule.BackgroundColor) ? "(none)" : rule.BackgroundColor;
         IsRegexCheck.IsChecked       = rule.IsRegex;
         CaseSensitiveCheck.IsChecked = rule.CaseSensitive;
         EnabledCheck.IsChecked       = rule.IsEnabled;
@@ -51,6 +65,8 @@ public partial class HighlightsPanel : UserControl
         if (_engine is null) return;
         var pattern       = PatternBox.Text?.Trim() ?? string.Empty;
         var color         = ColorBox.SelectedItem as string ?? "Yellow";
+        var bgRaw         = BgColorBox.SelectedItem as string ?? "(none)";
+        var bgColor       = bgRaw == "(none)" ? string.Empty : bgRaw;
         var isRegex       = IsRegexCheck.IsChecked == true;
         var caseSensitive = CaseSensitiveCheck.IsChecked == true;
         var enabled       = EnabledCheck.IsChecked == true;
@@ -64,7 +80,7 @@ public partial class HighlightsPanel : UserControl
         }
 
         _engine.RemoveRule(pattern);
-        _engine.AddRule(pattern, color, isRegex, caseSensitive, enabled);
+        _engine.AddRule(pattern, color, bgColor, isRegex, caseSensitive, enabled);
         Refresh();
         StatusText.Text = "Saved.";
     }
@@ -100,6 +116,7 @@ public partial class HighlightsPanel : UserControl
         ItemsList.SelectedIndex      = -1;
         PatternBox.Text              = string.Empty;
         ColorBox.SelectedIndex       = 0;
+        BgColorBox.SelectedIndex     = 0;
         IsRegexCheck.IsChecked       = false;
         CaseSensitiveCheck.IsChecked = false;
         EnabledCheck.IsChecked       = true;

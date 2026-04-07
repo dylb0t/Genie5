@@ -44,6 +44,9 @@ public sealed class PresetEngine
     public string GetForeground(string id)
         => _presets.TryGetValue(id, out var r) ? r.ForegroundColor : "Default";
 
+    public string GetBackground(string id)
+        => _presets.TryGetValue(id, out var r) ? r.BackgroundColor : string.Empty;
+
     public bool GetHighlightLine(string id)
         => _presets.TryGetValue(id, out var r) && r.HighlightLine;
 }

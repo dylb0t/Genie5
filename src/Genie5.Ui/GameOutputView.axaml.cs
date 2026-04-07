@@ -25,8 +25,14 @@ public partial class GameOutputView : UserControl
 
         _vm = DataContext as GameOutputViewModel;
 
+        OutputPanel.Children.Clear();
+
         if (_vm is not null)
+        {
+            foreach (var line in _vm.Lines)
+                RenderLine(line);
             _vm.Lines.CollectionChanged += OnLinesChanged;
+        }
     }
 
     private void OnLinesChanged(object? sender, NotifyCollectionChangedEventArgs e)

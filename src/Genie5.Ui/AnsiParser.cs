@@ -6,11 +6,12 @@ public static class AnsiParser
 {
     /// <summary>Parse a string that may contain ANSI escape codes into a RenderLine.</summary>
     public static RenderLine Parse(string input,
-        bool gslBold = false, string gslColor = "")
+        bool gslBold = false, string gslColor = "", string gslBackground = "")
     {
         var line = new RenderLine();
         var sb   = new StringBuilder();
         var fg   = string.IsNullOrEmpty(gslColor) ? "Default" : gslColor;
+        var bg   = gslBackground;
         var bold = gslBold;
 
         void Flush()
@@ -20,6 +21,7 @@ public static class AnsiParser
             {
                 Text       = sb.ToString(),
                 Foreground = fg,
+                Background = bg,
                 Bold       = bold
             });
             sb.Clear();
@@ -43,6 +45,7 @@ public static class AnsiParser
                     {
                         case 0:
                             fg   = string.IsNullOrEmpty(gslColor) ? "Default" : gslColor;
+                            bg   = gslBackground;
                             bold = gslBold;
                             break;
                         case 1:  bold = true;      break;

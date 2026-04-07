@@ -130,7 +130,7 @@ public partial class MainWindow : Window
         var line = new RenderLine();
         foreach (var seg in segments)
         {
-            var parsed = AnsiParser.Parse(seg.Text, seg.GslBold, seg.GslColor);
+            var parsed = AnsiParser.Parse(seg.Text, seg.GslBold, seg.GslColor, seg.GslBackground);
             foreach (var span in parsed.Spans)
                 line.Spans.Add(span);
         }
@@ -140,8 +140,9 @@ public partial class MainWindow : Window
         {
             if (!string.IsNullOrEmpty(seg.GslColor) && _presets.GetHighlightLine(seg.GslColor))
             {
+                var hlBg = _presets.GetBackground(seg.GslColor);
                 line = ApplyRangeHighlight(line,
-                    [(0, line.PlainText.Length)], seg.GslColor);
+                    [(0, line.PlainText.Length)], seg.GslColor, hlBg);
                 break;
             }
         }
@@ -155,7 +156,7 @@ public partial class MainWindow : Window
         if (rule != null)
         {
             var ranges = rule.GetHighlightRanges(line.PlainText);
-            line = ApplyRangeHighlight(line, ranges, rule.ForegroundColor);
+            line = ApplyRangeHighlight(line, ranges, rule.ForegroundColor, rule.BackgroundColor);
         }
 
         _scrollback.Add(line);
@@ -166,7 +167,7 @@ public partial class MainWindow : Window
     // its original colour.  If ranges covers the entire line the result is the
     // same as coloring every span (preserves the existing whole-line behaviour).
     private static RenderLine ApplyRangeHighlight(
-        RenderLine line, IReadOnlyList<(int Start, int Length)> ranges, string color)
+        RenderLine line, IReadOnlyList<(int Start, int Length)> ranges, string color, string bgColor = "")
     {
         if (ranges.Count == 0) return line;
 
@@ -199,6 +200,7 @@ public partial class MainWindow : Window
                         {
                             Text       = span.Text.Substring(segStart - pos, i - segStart),
                             Foreground = segHl ? color : span.Foreground,
+                            Background = segHl && !string.IsNullOrEmpty(bgColor) ? bgColor : span.Background,
                             Bold       = span.Bold,
                         });
                     }

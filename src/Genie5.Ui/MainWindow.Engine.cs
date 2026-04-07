@@ -122,7 +122,7 @@ public partial class MainWindow
                     var line2 = new RenderLine();
                     foreach (var seg in segments)
                     {
-                        var parsed = AnsiParser.Parse(seg.Text, seg.GslBold, seg.GslColor);
+                        var parsed = AnsiParser.Parse(seg.Text, seg.GslBold, seg.GslColor, seg.GslBackground);
                         foreach (var span in parsed.Spans)
                             line2.Spans.Add(span);
                     }
@@ -151,7 +151,7 @@ public partial class MainWindow
             _triggers.AddTrigger(m.Pattern, m.Action, m.CaseSensitive, m.IsEnabled);
 
         foreach (var m in _persistence.LoadHighlights(DataPath("highlights.json")))
-            _highlights.AddRule(m.Pattern, m.ForegroundColor, m.IsRegex, m.CaseSensitive, m.IsEnabled);
+            _highlights.AddRule(m.Pattern, m.ForegroundColor, m.BackgroundColor, m.IsRegex, m.CaseSensitive, m.IsEnabled);
 
         foreach (var m in _persistence.LoadPresets(DataPath("presets.json")))
             _presets.Apply(new Genie4.Core.Presets.PresetRule

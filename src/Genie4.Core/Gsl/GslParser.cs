@@ -225,8 +225,9 @@ public sealed class GslParser
                 ctx.Flush();
                 var rule  = _presets.Get(pid);
                 var color = rule?.ForegroundColor ?? string.Empty;
+                var bg    = rule?.BackgroundColor ?? string.Empty;
                 ctx.Events.Add(new PresetEvent(pid, ptxt));
-                ctx.Segments.Add(new GslSegment(ptxt, ctx.Bold, color));
+                ctx.Segments.Add(new GslSegment(ptxt, ctx.Bold, color, bg));
                 break;
             }
 
@@ -327,11 +328,16 @@ public sealed class GslParser
                     _ => sid
                 };
                 if (string.IsNullOrEmpty(sid))
-                    ctx.PresetColor = string.Empty;
+                {
+                    ctx.PresetColor      = string.Empty;
+                    ctx.PresetBackground = string.Empty;
+                }
                 else
                 {
-                    var fg = _presets.Get(sid)?.ForegroundColor ?? string.Empty;
-                    ctx.PresetColor = fg == "Default" ? string.Empty : fg;
+                    var rule = _presets.Get(sid);
+                    var fg = rule?.ForegroundColor ?? string.Empty;
+                    ctx.PresetColor      = fg == "Default" ? string.Empty : fg;
+                    ctx.PresetBackground = rule?.BackgroundColor ?? string.Empty;
                 }
                 break;
             }
@@ -365,12 +371,13 @@ public sealed class GslParser
         public StringBuilder    XmlBuf        { get; } = new();
         public int  Depth { get; set; }
         public bool Bold  { get; set; }
-        public string PresetColor { get; set; } = string.Empty;
+        public string PresetColor      { get; set; } = string.Empty;
+        public string PresetBackground { get; set; } = string.Empty;
 
         public void Flush()
         {
             if (Text.Length == 0) return;
-            Segments.Add(new GslSegment(Text.ToString(), Bold, PresetColor));
+            Segments.Add(new GslSegment(Text.ToString(), Bold, PresetColor, PresetBackground));
             Text.Clear();
         }
     }
