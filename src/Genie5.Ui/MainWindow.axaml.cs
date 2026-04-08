@@ -332,6 +332,7 @@ public partial class MainWindow : Window
         ApplyHighlightAndAppend(echoLine);
 
         if (_mapper.TryHandleGoto(expanded)) return;
+        if (TryHandleScriptCommand(expanded)) return;
 
         if (!_aliases.TryProcess(expanded))
             _engine.ProcessInput(expanded);
@@ -465,6 +466,34 @@ public partial class MainWindow : Window
     }
 
     private void OnSend(object? sender, RoutedEventArgs e) => SendInput();
+
+    // Intercepts ".scriptname [args...]" launches and "#kill"/"#kill name" stops.
+    private bool TryHandleScriptCommand(string input)
+    {
+        var t = input.TrimStart();
+        if (t.Length == 0) return false;
+
+        if (t[0] == '.')
+        {
+            var rest   = t[1..].Trim();
+            if (rest.Length == 0) return false;
+            var parts  = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var name   = parts[0];
+            var args   = parts.Skip(1).ToList();
+            _scripts.TryStart(name, args);
+            return true;
+        }
+
+        if (t.StartsWith("#kill", StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = t.Length > 5 ? t[5..].Trim() : string.Empty;
+            if (string.IsNullOrEmpty(rest)) _scripts.StopAll();
+            else                            _scripts.Stop(rest);
+            return true;
+        }
+
+        return false;
+    }
 
     private void OnSettings(object? sender, RoutedEventArgs e)
     {

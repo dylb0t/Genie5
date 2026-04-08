@@ -11,6 +11,7 @@ using Genie4.Core.Persistence;
 using Genie4.Core.Profiles;
 using Genie4.Core.Queue;
 using Genie4.Core.Runtime;
+using Genie4.Core.Scripting;
 using Genie4.Core.Triggers;
 using Genie4.Core.Variables;
 
@@ -35,6 +36,8 @@ public partial class MainWindow
     private readonly MapZoneRepository _mapRepo = new();
     internal MapperController _mapper = null!;
     internal readonly WindowSettingsStore _windowSettings = new();
+    internal readonly TypeAheadSession _typeAhead = new();
+    internal ScriptEngine _scripts = null!;
 
     // Prompt suppression: only show the prompt when output or a command preceded it.
     private bool _outputSinceLastPrompt  = false;
@@ -78,7 +81,20 @@ public partial class MainWindow
             _gslGameState,
             mapsDir,
             AppendOutput,
-            cmd => _engine.ProcessInput(cmd));
+            cmd => _engine.ProcessInput(cmd),
+            _typeAhead);
+
+        var scriptsDir = DataPath("Scripts");
+        _scripts = new ScriptEngine(
+            scriptsDir,
+            _typeAhead,
+            cmd =>
+            {
+                _mapperEngine?.OnCommandSent(cmd);
+                _commandSinceLastPrompt = true;
+                _ = _client.SendAsync(cmd);
+            },
+            AppendOutput);
         _mapper.SetInitialZonePath(defaultZonePath);
         _mapper.ZoneChanged += () => Avalonia.Threading.Dispatcher.UIThread.Post(
             () => _mapWindow?.RefreshZoneList(_mapper.CurrentZonePath));
@@ -126,11 +142,12 @@ public partial class MainWindow
 
                 // Let the mapper observe lines for type-ahead errors.
                 _mapper.OnGameLine(plainText);
+                _scripts.OnGameLine(plainText);
 
                 // Suppress repeated prompts: only show the prompt line when output
                 // or a command has occurred since the last one.
                 bool isPrompt = events.Any(ev => ev is PromptEvent);
-                if (isPrompt) _mapper.OnPrompt();
+                if (isPrompt) { _mapper.OnPrompt(); _scripts.OnPrompt(); }
                 if (isPrompt)
                 {
                     var show = _outputSinceLastPrompt || _commandSinceLastPrompt;

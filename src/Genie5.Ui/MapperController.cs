@@ -5,6 +5,7 @@ using System.Linq;
 using Avalonia.Threading;
 using Genie4.Core.Gsl;
 using Genie4.Core.Mapper;
+using Genie4.Core.Scripting;
 
 namespace Genie5.Ui;
 
@@ -21,6 +22,7 @@ public sealed class MapperController
     private readonly Action<string>    _appendOutput;
     private readonly Action<string>    _sendCommand;
     private readonly string            _mapsDir;
+    private readonly TypeAheadSession  _typeAhead;
 
     public MapperController(
         AutoMapperEngine engine,
@@ -28,7 +30,8 @@ public sealed class MapperController
         GslGameState gameState,
         string mapsDir,
         Action<string> appendOutput,
-        Action<string> sendCommand)
+        Action<string> sendCommand,
+        TypeAheadSession typeAhead)
     {
         _engine       = engine;
         _repo         = repo;
@@ -36,7 +39,7 @@ public sealed class MapperController
         _mapsDir      = mapsDir;
         _appendOutput = appendOutput;
         _sendCommand  = sendCommand;
-
+        _typeAhead    = typeAhead;
     }
 
     // ── Walk state machine ─────────────────────────────────────────────────
@@ -60,7 +63,11 @@ public sealed class MapperController
     /// downward when the server reports the type-ahead cap. Persists for the
     /// lifetime of the session.
     /// </summary>
-    public int TypeAheadLimit { get; private set; } = 3;
+    public int TypeAheadLimit
+    {
+        get => _typeAhead.Limit;
+        private set => _typeAhead.Limit = value;
+    }
 
     /// <summary>True while a #goto walk is in progress.</summary>
     public bool IsWalking => _walking;
