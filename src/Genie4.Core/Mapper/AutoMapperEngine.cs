@@ -19,7 +19,7 @@ public sealed class AutoMapperEngine
 
     public MapNode?  CurrentNode  { get; private set; }
     public MapZone   ActiveZone   => _zone;
-    public bool      IsEnabled    { get; set; } = true;
+    public bool      IsEnabled    { get; set; } = false;
 
     public event Action? MapChanged;
     public event Action? CurrentNodeChanged;
@@ -85,7 +85,7 @@ public sealed class AutoMapperEngine
 
     private void OnStateChanged()
     {
-        if (!IsEnabled || _state is null) return;
+        if (_state is null) return;
 
         var title   = _state.RoomTitle;
         var exits   = _state.Exits;
@@ -129,6 +129,13 @@ public sealed class AutoMapperEngine
                 node.Description = description;
                 zoneChanged = true;
             }
+        }
+        else if (!IsEnabled)
+        {
+            // Lookup-only mode: don't create new nodes, just clear current node.
+            CurrentNode = null;
+            CurrentNodeChanged?.Invoke();
+            return;
         }
         else
         {
@@ -266,9 +273,7 @@ public sealed class AutoMapperEngine
         _fingerprintIndex.Clear();
         foreach (var node in _zone.Nodes.Values)
         {
-            // Reconstruct exit strings from the exit directions for fingerprinting
-            var exitStrings = node.Exits.Select(e => e.MoveCommand);
-            var fp = MapFingerprint.Compute(node.Title, exitStrings);
+            var fp = MapFingerprint.Compute(node.Title, node.Exits);
             _fingerprintIndex.TryAdd(fp, node.Id);
         }
     }

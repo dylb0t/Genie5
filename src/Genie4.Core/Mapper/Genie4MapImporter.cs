@@ -49,11 +49,16 @@ public static class Genie4MapImporter
             if (descEl != null)
                 node.Description = descEl.InnerText.Trim();
 
-            // Note — Genie4's per-room note (used by #goto for label lookup,
-            // multiple labels separated by '|').
-            var noteEl = nodeEl.SelectSingleNode("note");
-            if (noteEl != null)
-                node.Notes = noteEl.InnerText.Trim();
+            // Note — Genie4 stores it as an attribute on <node>, with multiple
+            // labels separated by '|' (used by #goto for label lookup).
+            var noteAttr = nodeEl.GetAttribute("note");
+            if (!string.IsNullOrEmpty(noteAttr))
+                node.Notes = noteAttr.Trim();
+
+            // Color — also a node attribute (e.g. "#FF00FF")
+            var colorAttr = nodeEl.GetAttribute("color");
+            if (!string.IsNullOrEmpty(colorAttr))
+                node.Color = colorAttr.Trim();
 
             // Position
             var posEl = nodeEl.SelectSingleNode("position") as XmlElement;

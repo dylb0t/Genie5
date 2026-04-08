@@ -33,7 +33,7 @@ public partial class MainWindow
     internal readonly ProfileStore _profiles = new();
     internal AutoMapperEngine _mapperEngine = null!;
     private readonly MapZoneRepository _mapRepo = new();
-    internal string _currentZonePath = string.Empty;
+    internal MapperController _mapper = null!;
     internal readonly WindowSettingsStore _windowSettings = new();
 
     // Prompt suppression: only show the prompt when output or a command preceded it.
@@ -66,11 +66,22 @@ public partial class MainWindow
 
         LoadData();
 
-        var defaultZonePath = DataPath(Path.Combine("maps", "default.json"));
-        _currentZonePath = defaultZonePath;
+        var mapsDir = DataPath("Maps");
+        var defaultZonePath = Path.Combine(mapsDir, "default.json");
         var defaultZone = _mapRepo.Load(defaultZonePath) ?? new MapZone { Name = "Default" };
         _mapperEngine = new AutoMapperEngine(defaultZone);
         _mapperEngine.Attach(_gslGameState);
+
+        _mapper = new MapperController(
+            _mapperEngine,
+            _mapRepo,
+            _gslGameState,
+            mapsDir,
+            AppendOutput,
+            cmd => _engine.ProcessInput(cmd));
+        _mapper.SetInitialZonePath(defaultZonePath);
+        _mapper.ZoneChanged += () => Avalonia.Threading.Dispatcher.UIThread.Post(
+            () => _mapWindow?.RefreshZoneList(_mapper.CurrentZonePath));
 
         _client.LineReceived += line =>
         {
@@ -113,9 +124,13 @@ public partial class MainWindow
                 var plainText = string.Concat(segments.Select(s => s.Text));
                 if (string.IsNullOrWhiteSpace(plainText)) return;
 
+                // Let the mapper observe lines for type-ahead errors.
+                _mapper.OnGameLine(plainText);
+
                 // Suppress repeated prompts: only show the prompt line when output
                 // or a command has occurred since the last one.
                 bool isPrompt = events.Any(ev => ev is PromptEvent);
+                if (isPrompt) _mapper.OnPrompt();
                 if (isPrompt)
                 {
                     var show = _outputSinceLastPrompt || _commandSinceLastPrompt;
@@ -228,9 +243,7 @@ public partial class MainWindow
         _persistence.SavePresets(DataPath("presets.json"), _presets);
         _persistence.SaveWindowSettings(DataPath("window_settings.json"), _windowSettings);
         _profiles.Save(ProfilesPath);
-        _mapRepo.Save(string.IsNullOrEmpty(_currentZonePath)
-            ? DataPath(Path.Combine("maps", "default.json"))
-            : _currentZonePath, _mapperEngine.ActiveZone);
+        _mapper.SaveActiveZone();
         SaveLayout();
     }
 

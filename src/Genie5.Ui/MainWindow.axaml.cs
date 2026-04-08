@@ -331,87 +331,10 @@ public partial class MainWindow : Window
         });
         ApplyHighlightAndAppend(echoLine);
 
-        if (TryHandleGoto(expanded)) return;
+        if (_mapper.TryHandleGoto(expanded)) return;
 
         if (!_aliases.TryProcess(expanded))
             _engine.ProcessInput(expanded);
-    }
-
-    private bool TryHandleGoto(string input)
-    {
-        var trimmed = input.TrimStart();
-        if (trimmed.Length == 0 || trimmed[0] != '#') return false;
-
-        var space = trimmed.IndexOf(' ');
-        var name  = (space < 0 ? trimmed[1..] : trimmed[1..space]).ToLowerInvariant();
-        var arg   = space < 0 ? string.Empty : trimmed[(space + 1)..].Trim();
-
-        if (name is not ("goto" or "go" or "g" or "walk" or "walkto")) return false;
-
-        if (string.IsNullOrEmpty(arg))
-        {
-            AppendOutput("[mapper] Goto - please specify a room title or partial name to travel to.");
-            return true;
-        }
-
-        var current = _mapperEngine.CurrentNode;
-        if (current is null)
-        {
-            _mapperEngine.Recalculate();
-            current = _mapperEngine.CurrentNode;
-        }
-        if (current is null)
-        {
-            AppendOutput($"[mapper] Current location \"{_gslGameState.RoomTitle}\" is not in the loaded map. Try selecting a different zone.");
-            return true;
-        }
-
-        var zone = _mapperEngine.ActiveZone;
-
-        // Match priority: numeric ID → exact note label → note label StartsWith
-        //                 → exact title → title StartsWith → title/notes Contains
-        Genie4.Core.Mapper.MapNode? target = null;
-
-        if (int.TryParse(arg, out int idArg) && zone.Nodes.TryGetValue(idArg, out var byId))
-            target = byId;
-
-        bool NoteLabelMatches(string notes, Func<string, bool> pred)
-            => !string.IsNullOrEmpty(notes) &&
-               notes.Split('|').Any(label => pred(label.Trim()));
-
-        target ??= zone.Nodes.Values.FirstOrDefault(n =>
-                       NoteLabelMatches(n.Notes, l => string.Equals(l, arg, StringComparison.OrdinalIgnoreCase)))
-                ?? zone.Nodes.Values.FirstOrDefault(n =>
-                       NoteLabelMatches(n.Notes, l => l.StartsWith(arg, StringComparison.OrdinalIgnoreCase)))
-                ?? zone.Nodes.Values.FirstOrDefault(n => string.Equals(n.Title, arg, StringComparison.OrdinalIgnoreCase))
-                ?? zone.Nodes.Values.FirstOrDefault(n => n.Title.StartsWith(arg, StringComparison.OrdinalIgnoreCase))
-                ?? zone.Nodes.Values.FirstOrDefault(n => n.Title.Contains(arg, StringComparison.OrdinalIgnoreCase))
-                ?? zone.Nodes.Values.FirstOrDefault(n => !string.IsNullOrEmpty(n.Notes) &&
-                                                          n.Notes.Contains(arg, StringComparison.OrdinalIgnoreCase));
-
-        if (target is null)
-        {
-            AppendOutput($"[mapper] Destination \"{arg}\" not found.");
-            return true;
-        }
-
-        if (target.Id == current.Id)
-        {
-            AppendOutput("[mapper] Already there.");
-            return true;
-        }
-
-        var path = _mapperEngine.FindPath(current, target);
-        if (path is null || path.Count == 0)
-        {
-            AppendOutput($"[mapper] No path to \"{target.Title}\".");
-            return true;
-        }
-
-        AppendOutput($"[mapper] Walking to \"{target.Title}\" ({path.Count} steps).");
-        foreach (var move in path)
-            _engine.ProcessInput(move);
-        return true;
     }
 
     private async void OnMenuConnectProfile(object? sender, RoutedEventArgs e)
@@ -671,18 +594,11 @@ public partial class MainWindow : Window
         var dir = await dialog.ShowAsync(this);
         if (string.IsNullOrEmpty(dir)) return;
 
-        var zones = Genie4.Core.Mapper.Genie4MapImporter.ImportDirectory(dir);
-        if (zones.Count == 0)
-        {
+        var count = _mapper.ImportGenie4Maps(dir);
+        if (count == 0)
             AppendOutput("[mapper] No .xml map files found in that folder.");
-            return;
-        }
-
-        var mapsDir = DataPath("maps");
-        foreach (var zone in zones)
-            _mapRepo.Save(Path.Combine(mapsDir, zone.Name + ".json"), zone);
-
-        AppendOutput($"[mapper] Imported {zones.Count} map(s) to {mapsDir}");
+        else
+            AppendOutput($"[mapper] Imported {count} map(s) to {DataPath("Maps")}");
     }
 
     private void OnMenuToggleMapper(object? sender, RoutedEventArgs e)
@@ -698,16 +614,16 @@ public partial class MainWindow : Window
             _mapWindow = new MapWindow();
             _mapWindow.Initialize(
                 _mapperEngine,
-                DataPath("maps"),
+                DataPath("Maps"),
                 cmd => _engine.ProcessInput(cmd),
-                _currentZonePath);
-            _mapWindow.CurrentZonePathChanged = p => _currentZonePath = p;
+                _mapper.CurrentZonePath);
+            _mapWindow.CurrentZonePathChanged = p => _mapper.SetCurrentZonePath(p);
             _mapWindow.Closed += (_, _) => _mapWindow = null;
             _mapWindow.Show();
         }
         else
         {
-            _mapWindow.RefreshZoneList(_currentZonePath);
+            _mapWindow.RefreshZoneList(_mapper.CurrentZonePath);
             _mapWindow.Activate();
         }
     }
