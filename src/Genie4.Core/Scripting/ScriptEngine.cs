@@ -244,6 +244,27 @@ public sealed class ScriptEngine
 
     private bool StepOne(ScriptInstance inst)
     {
+        // Drain any pending semicolon-split sends before advancing the PC.
+        if (inst.PendingSends.Count > 0)
+        {
+            if (_inFlight >= _typeAhead.Limit) return false;
+            var next = inst.PendingSends.Dequeue();
+            if (next.Length > 0)
+            {
+                if (next[0] == '#')
+                {
+                    HandleMetaCommand(next, inst);
+                }
+                else
+                {
+                    _inFlight++;
+                    Extensions.DispatchCommand(next);
+                    _sendCommand(next);
+                }
+            }
+            return true;
+        }
+
         if (inst.Pc >= inst.Lines.Count)
         {
             inst.Running = false;
@@ -293,13 +314,7 @@ public sealed class ScriptEngine
                 }
                 var condText  = rest[..thenIdx].Trim();
                 var afterThen = rest[(thenIdx + 4)..].Trim();
-                bool cond;
-                try { cond = ScriptExpression.EvalBool(condText, inst, Globals); }
-                catch (Exception ex)
-                {
-                    _echo($"[script] {inst.Name}:{lineNo} expr error: {ex.Message}");
-                    return true;
-                }
+                bool cond = EvalConditionSafe(condText, inst);
                 return HandleConditional(cond, afterThen, inst, lineNo, currentIdx);
             }
 
@@ -310,6 +325,7 @@ public sealed class ScriptEngine
 
             case "put":
             case "send":
+            {
                 // Genie meta-commands routed via 'put' (#tvar, #echo, #mapper, ...)
                 // are intercepted here instead of being sent to the game.
                 if (rest.Length > 0 && rest[0] == '#')
@@ -317,15 +333,35 @@ public sealed class ScriptEngine
                     HandleMetaCommand(rest, inst);
                     return true;
                 }
+
+                // Genie's ';' separates multiple commands in a single put. Each
+                // is queued and drained one-per-tick so the type-ahead budget
+                // is respected per command, not per put statement.
+                var parts = SplitSemicolons(rest);
+                if (parts.Count == 0) return true;
+
                 if (_inFlight >= _typeAhead.Limit)
                 {
                     inst.Pc--; // re-execute next tick when budget frees up
                     return false;
                 }
-                _inFlight++;
-                Extensions.DispatchCommand(rest);
-                _sendCommand(rest);
+
+                var first = parts[0];
+                for (int p = 1; p < parts.Count; p++)
+                    inst.PendingSends.Enqueue(parts[p]);
+
+                if (first.Length > 0 && first[0] == '#')
+                {
+                    HandleMetaCommand(first, inst);
+                }
+                else
+                {
+                    _inFlight++;
+                    Extensions.DispatchCommand(first);
+                    _sendCommand(first);
+                }
                 return true;
+            }
 
             case "echo":
                 _echo(rest);
@@ -413,6 +449,56 @@ public sealed class ScriptEngine
                 return true;
             }
 
+            case "timer":
+            {
+                // timer start | stop | clear | reset
+                // %timer reads the elapsed seconds since the last 'timer start'.
+                var op = rest.Trim().ToLowerInvariant();
+                switch (op)
+                {
+                    case "":
+                    case "start": inst.TimerStart = DateTime.UtcNow; break;
+                    case "stop":
+                    case "clear":
+                    case "reset": inst.TimerStart = null;            break;
+                    default:
+                        _echo($"[script] {inst.Name}:{lineNo} timer: unknown sub-command '{op}'");
+                        break;
+                }
+                return true;
+            }
+
+            case "math":
+            {
+                // math <var> <op> <n>   ops: add | subtract | multiply | divide | set
+                var (vn, tail) = SplitCmd(rest);
+                var (op, arg)  = SplitCmd(tail);
+                if (string.IsNullOrEmpty(vn) || string.IsNullOrEmpty(op))
+                {
+                    _echo($"[script] {inst.Name}:{lineNo} math: usage 'math <var> <op> <n>'");
+                    return true;
+                }
+                double cur = inst.Vars.TryGetValue(vn, out var cv)
+                          && double.TryParse(cv, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)
+                                ? d : 0;
+                if (!double.TryParse(arg.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var n))
+                    n = 0;
+                double result = op.ToLowerInvariant() switch
+                {
+                    "add"      => cur + n,
+                    "subtract" => cur - n,
+                    "multiply" => cur * n,
+                    "divide"   => n == 0 ? 0 : cur / n,
+                    "modulus"  => n == 0 ? 0 : cur % n,
+                    "set"      => n,
+                    _          => cur,
+                };
+                inst.Vars[vn] = result == Math.Floor(result) && !double.IsInfinity(result)
+                    ? ((long)result).ToString(CultureInfo.InvariantCulture)
+                    : result.ToString("0.################", CultureInfo.InvariantCulture);
+                return true;
+            }
+
             case "action":
                 HandleAction(rest, inst, lineNo);
                 return true;
@@ -433,9 +519,10 @@ public sealed class ScriptEngine
                         ? ScriptExpression.ToNum(result).ToString("0.################", CultureInfo.InvariantCulture)
                         : ScriptExpression.ToStr(result);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    _echo($"[script] {inst.Name}:{lineNo} eval error: {ex.Message}");
+                    // Genie convention: failed eval leaves the var as empty string.
+                    inst.Vars[vn.Trim()] = string.Empty;
                 }
                 return true;
             }
@@ -444,6 +531,28 @@ public sealed class ScriptEngine
                 _echo($"[script] {inst.Name}:{lineNo} unknown command: {cmd}");
                 return true;
         }
+    }
+
+    /// <summary>
+    /// Evaluate a condition, treating empty input and parse errors as false.
+    /// Genie scripts routinely test variables that are not yet set; an undefined
+    /// <c>$hidden</c> substitutes to <c>""</c> and we want <c>if ($hidden)</c>
+    /// to silently mean false rather than crashing.
+    /// </summary>
+    private bool EvalConditionSafe(string condText, ScriptInstance inst)
+    {
+        if (string.IsNullOrWhiteSpace(condText)) return false;
+
+        // Strip a single layer of empty parens / whitespace; "(  )" → false.
+        var stripped = condText.Trim();
+        if (stripped.Length >= 2 && stripped[0] == '(' && stripped[^1] == ')')
+        {
+            var inner = stripped[1..^1].Trim();
+            if (inner.Length == 0) return false;
+        }
+
+        try { return ScriptExpression.EvalBool(condText, inst, Globals); }
+        catch { return false; }
     }
 
     private bool HandleConditional(bool cond, string afterThen,
@@ -530,9 +639,36 @@ public sealed class ScriptEngine
             return;
         }
 
-        if (trimmed.Equals("on",    StringComparison.OrdinalIgnoreCase)) { inst.ActionsEnabled = true;  return; }
-        if (trimmed.Equals("off",   StringComparison.OrdinalIgnoreCase)) { inst.ActionsEnabled = false; return; }
-        if (trimmed.Equals("clear", StringComparison.OrdinalIgnoreCase)) { inst.Actions.Clear();        return; }
+        // Optional leading "(label)" attaches a name to this action so it
+        // can be toggled or removed by label later.
+        string label = string.Empty;
+        if (trimmed[0] == '(')
+        {
+            int close = trimmed.IndexOf(')');
+            if (close > 0)
+            {
+                label   = trimmed[1..close].Trim();
+                trimmed = trimmed[(close + 1)..].Trim();
+            }
+        }
+
+        // Global on/off/clear (only meaningful when no label).
+        if (label.Length == 0)
+        {
+            if (trimmed.Equals("on",    StringComparison.OrdinalIgnoreCase)) { inst.ActionsEnabled = true;  return; }
+            if (trimmed.Equals("off",   StringComparison.OrdinalIgnoreCase)) { inst.ActionsEnabled = false; return; }
+            if (trimmed.Equals("clear", StringComparison.OrdinalIgnoreCase)) { inst.Actions.Clear();        return; }
+        }
+        else
+        {
+            // Per-label control: enable/disable/remove all triggers with this label.
+            if (trimmed.Equals("on",     StringComparison.OrdinalIgnoreCase))
+            { foreach (var a in inst.Actions) if (LabelMatch(a, label)) a.Enabled = true;  return; }
+            if (trimmed.Equals("off",    StringComparison.OrdinalIgnoreCase))
+            { foreach (var a in inst.Actions) if (LabelMatch(a, label)) a.Enabled = false; return; }
+            if (trimmed.Equals("remove", StringComparison.OrdinalIgnoreCase))
+            { inst.Actions.RemoveAll(a => LabelMatch(a, label));                            return; }
+        }
 
         if (trimmed.StartsWith("remove ", StringComparison.OrdinalIgnoreCase))
         {
@@ -568,12 +704,16 @@ public sealed class ScriptEngine
 
         inst.Actions.Add(new ScriptAction
         {
+            Label   = label,
             Command = cmd,
             Pattern = pattern,
             IsRegex = isRegex,
             Enabled = true,
         });
     }
+
+    private static bool LabelMatch(ScriptAction a, string label)
+        => string.Equals(a.Label, label, StringComparison.OrdinalIgnoreCase);
 
     private static int FindKeywordOutsideQuotes(string s, string keyword)
     {
@@ -593,6 +733,33 @@ public sealed class ScriptEngine
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Split a command string on unquoted semicolons, trimming each part and
+    /// dropping empty pieces. Quoted segments survive intact so a regex like
+    /// <c>"foo;bar"</c> isn't accidentally split.
+    /// </summary>
+    private static List<string> SplitSemicolons(string s)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrEmpty(s)) return result;
+
+        bool inStr = false;
+        int start = 0;
+        for (int i = 0; i < s.Length; i++)
+        {
+            if (s[i] == '"') inStr = !inStr;
+            else if (s[i] == ';' && !inStr)
+            {
+                var part = s[start..i].Trim();
+                if (part.Length > 0) result.Add(part);
+                start = i + 1;
+            }
+        }
+        var tail = s[start..].Trim();
+        if (tail.Length > 0) result.Add(tail);
+        return result;
+    }
 
     private static (string cmd, string rest) SplitCmd(string s)
     {
@@ -619,7 +786,14 @@ public sealed class ScriptEngine
             if (j == i + 1) { sb.Append(c); continue; }
             var name = text[(i + 1)..j];
             string value;
-            if (c == '$')
+            // Pseudo-variables: computed on each substitution rather than stored.
+            if (name.Equals("timer", StringComparison.OrdinalIgnoreCase))
+            {
+                value = inst.TimerStart is { } t
+                    ? ((int)(DateTime.UtcNow - t).TotalSeconds).ToString(CultureInfo.InvariantCulture)
+                    : "0";
+            }
+            else if (c == '$')
                 value = Globals.TryGetValue(name, out var gv) ? gv : string.Empty;
             else
                 value = inst.Vars.TryGetValue(name, out var lv) ? lv : string.Empty;

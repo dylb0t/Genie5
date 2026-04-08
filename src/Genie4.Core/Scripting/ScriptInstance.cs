@@ -36,12 +36,20 @@ public sealed class ScriptInstance
     // action triggers — persistent, fire whenever a matching line arrives
     public List<ScriptAction> Actions = new();
     public bool ActionsEnabled = true;
+
+    // Pending sends from a single put/send statement that contained multiple
+    // semicolon-separated commands; drained one-per-tick respecting type-ahead.
+    public Queue<string> PendingSends = new();
+
+    // 'timer start' baseline for the %timer pseudo-variable.
+    public DateTime? TimerStart;
 }
 
 public sealed class ScriptAction
 {
+    public string Label    = string.Empty; // Genie 'action (label) ...' name; "" = anonymous
     public string Pattern  = string.Empty;
     public string Command  = string.Empty; // statement to run on match (script-level, not raw send)
     public bool   IsRegex;
-    public bool   Enabled = true;
+    public bool   Enabled  = true;
 }
