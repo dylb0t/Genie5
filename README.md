@@ -82,10 +82,10 @@ TcpGameClient.LineReceived
 
 ### Known bugs
 - [x] Compass exits do not light up — `CompassEvent` is emitted but exits are not reflected in `CompassView` rendering
-- [ ] Direct TCP connect handshake — sending `look` or CR after connect does not trigger the server handshake
+- [x] Direct TCP connect handshake — sending `look` or CR after connect does not trigger the server handshake
 - [ ] Highlights editor: colour picker is limited; more colour options needed
 - [ ] Profile management is buggy (save/load edge cases)
-- [ ] Double echo on sent commands
+- [x] Double echo on sent commands
 - [ ] Moving windows from one panel from another leaves tab in another window
 
 ### Planned features
@@ -93,7 +93,7 @@ TcpGameClient.LineReceived
 - [ ] Kneeling/Prone/Standing person images
 - [ ] Script engine — port Genie4 script runner (`.cmd` files)
 - [ ] Map window — port Genie4 mapper
-- [x] Spell tracking window
+- [x] Spell tracking counter
 - [ ] Auto-repeat / speedwalk
 - [ ] Font and colour preference UI
 - [ ] Import genie configurations - Should automatically detect what config it is (highlights/presets etc) and import appropriately.
