@@ -1,0 +1,17 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Genie5.Ui"
+        x:Class="Genie5.Ui.MapWindow"
+        Width="700"
+        Height="600"
+        Title="Map">
+  <DockPanel>
+    <Grid DockPanel.Dock="Top" Margin="6" ColumnDefinitions="Auto,*,Auto">
+      <TextBlock Grid.Column="0" Text="Zone:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+      <ComboBox  Grid.Column="1" Name="ZoneBox" HorizontalAlignment="Stretch"
+                 SelectionChanged="OnZoneSelected"/>
+      <Button    Grid.Column="2" Content="Center" Margin="6,0,0,0" Click="OnCenter"/>
+    </Grid>
+    <local:MapView Name="MapHost"/>
+  </DockPanel>
+</Window>

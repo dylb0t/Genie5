@@ -54,9 +54,11 @@
       </MenuItem>
 
       <MenuItem Header="_AutoMapper">
+        <MenuItem Header="_Show Map Window"        Click="OnMenuShowMapWindow" />
         <MenuItem Header="_Import Genie4 Maps..."  Click="OnMenuImportMaps" />
         <Separator />
-        <MenuItem Header="_Enable Automapper"      Click="OnMenuToggleMapper" />
+        <MenuItem Header="_Enable Automapper"      Name="EnableMapperMenuItem"
+                  ToggleType="CheckBox"            Click="OnMenuToggleMapper" />
       </MenuItem>
 
       <MenuItem Header="_Plugins">

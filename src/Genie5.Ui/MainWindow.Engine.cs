@@ -33,6 +33,7 @@ public partial class MainWindow
     internal readonly ProfileStore _profiles = new();
     internal AutoMapperEngine _mapperEngine = null!;
     private readonly MapZoneRepository _mapRepo = new();
+    internal string _currentZonePath = string.Empty;
     internal readonly WindowSettingsStore _windowSettings = new();
 
     // Prompt suppression: only show the prompt when output or a command preceded it.
@@ -66,6 +67,7 @@ public partial class MainWindow
         LoadData();
 
         var defaultZonePath = DataPath(Path.Combine("maps", "default.json"));
+        _currentZonePath = defaultZonePath;
         var defaultZone = _mapRepo.Load(defaultZonePath) ?? new MapZone { Name = "Default" };
         _mapperEngine = new AutoMapperEngine(defaultZone);
         _mapperEngine.Attach(_gslGameState);
@@ -226,7 +228,9 @@ public partial class MainWindow
         _persistence.SavePresets(DataPath("presets.json"), _presets);
         _persistence.SaveWindowSettings(DataPath("window_settings.json"), _windowSettings);
         _profiles.Save(ProfilesPath);
-        _mapRepo.Save(DataPath(Path.Combine("maps", "default.json")), _mapperEngine.ActiveZone);
+        _mapRepo.Save(string.IsNullOrEmpty(_currentZonePath)
+            ? DataPath(Path.Combine("maps", "default.json"))
+            : _currentZonePath, _mapperEngine.ActiveZone);
         SaveLayout();
     }
 

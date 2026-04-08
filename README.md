@@ -81,16 +81,24 @@ TcpGameClient.LineReceived
 ## TODO
 
 ### Known bugs
-- [ ] Compass exits do not light up — `CompassEvent` is emitted but exits are not reflected in `CompassView` rendering
+- [x] Compass exits do not light up — `CompassEvent` is emitted but exits are not reflected in `CompassView` rendering
 - [ ] Direct TCP connect handshake — sending `look` or CR after connect does not trigger the server handshake
 - [ ] Highlights editor: colour picker is limited; more colour options needed
 - [ ] Profile management is buggy (save/load edge cases)
 - [ ] Double echo on sent commands
+- [ ] Moving windows from one panel from another leaves tab in another window
 
 ### Planned features
 - [ ] Per-body-part wound tracking — `BodyView` currently shows global bleeding only; GSL wound data exists per zone
+- [ ] Kneeling/Prone/Standing person images
 - [ ] Script engine — port Genie4 script runner (`.cmd` files)
 - [ ] Map window — port Genie4 mapper
-- [ ] Spell tracking window
+- [x] Spell tracking window
 - [ ] Auto-repeat / speedwalk
 - [ ] Font and colour preference UI
+- [ ] Import genie configurations - Should automatically detect what config it is (highlights/presets etc) and import appropriately.
+- [ ] Clickable compass to go a direction
+- [ ] Ability to run both genie scripts and lich scripts
+- [ ] Select to copy (setable)
+
+

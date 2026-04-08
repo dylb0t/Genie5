@@ -34,6 +34,9 @@ public sealed class MapView : Control
     private static readonly IBrush TextBrush     = new SolidColorBrush(Color.FromRgb(200, 210, 220));
     private static readonly IBrush ZLabelBrush   = new SolidColorBrush(Color.FromRgb(150, 150, 150));
 
+    /// <summary>Invoked with each move command when a path is walked via right-click.</summary>
+    public Action<string>? SendCommand { get; set; }
+
     public MapView()
     {
         ClipToBounds     = true;
@@ -151,7 +154,8 @@ public sealed class MapView : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        var props = e.GetCurrentPoint(this).Properties;
+        if (props.IsLeftButtonPressed)
         {
             _isDragging    = true;
             _dragStart     = e.GetPosition(this);
@@ -159,6 +163,41 @@ public sealed class MapView : Control
             _offsetYAtDrag = _offsetY;
             e.Pointer.Capture(this);
         }
+        else if (props.IsRightButtonPressed)
+        {
+            HandleRightClick(e.GetPosition(this));
+        }
+    }
+
+    private void HandleRightClick(Point pos)
+    {
+        if (_vm is null || SendCommand is null) return;
+        var current = _vm.Engine.CurrentNode;
+        if (current is null) return;
+
+        var clicked = HitTestNode(pos, current.Z);
+        if (clicked is null || clicked.Id == current.Id) return;
+
+        var path = _vm.Engine.FindPath(current, clicked);
+        if (path is null || path.Count == 0) return;
+
+        foreach (var move in path)
+            SendCommand(move);
+    }
+
+    private MapNode? HitTestNode(Point pos, int z)
+    {
+        if (_vm is null) return null;
+        var cx = Bounds.Width  / 2 + _offsetX;
+        var cy = Bounds.Height / 2 + _offsetY;
+        foreach (var node in _vm.Engine.ActiveZone.Nodes.Values)
+        {
+            if (node.Z != z) continue;
+            var (nx, ny) = NodeScreen(node, cx, cy);
+            var rect = new Rect(nx - NodeW / 2, ny - NodeH / 2, NodeW, NodeH);
+            if (rect.Contains(pos)) return node;
+        }
+        return null;
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)

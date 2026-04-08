@@ -4,5 +4,5 @@ public sealed class MapExit
 {
     public Direction Direction    { get; set; }
     public string    MoveCommand  { get; set; } = string.Empty;
-    public Guid?     DestinationId { get; set; }
+    public int?      DestinationId { get; set; }
 }

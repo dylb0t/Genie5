@@ -19,8 +19,7 @@ public partial class MainWindow : Window
     private readonly GameOutputViewModel _rawOutputVm;
     private readonly GameOutputViewModel _logVm;
     private readonly RoomViewModel _roomVm = new();
-    private MapViewModel       _mapVm    = null!;
-    private MapView            _mapView  = null!;
+    private MapWindow?         _mapWindow;
     private GenieDockFactory   _factory  = null!;
 
     // Sub-stream panels keyed by GSL stream id
@@ -71,11 +70,9 @@ public partial class MainWindow : Window
         var streamTuples = streams.Select((s, i) => (s.id, s.title, streamVmArray[i]));
         AttachWindowSettings(_gameOutputVm, _rawOutputVm, _logVm, streamTuples);
 
-        _mapVm   = new MapViewModel(_mapperEngine);
-        _mapView = new MapView();
-        _mapView.Attach(_mapVm);
+        EnableMapperMenuItem.IsChecked = _mapperEngine.IsEnabled;
 
-        _factory = new GenieDockFactory(_gameOutputVm, _rawOutputVm, streamVmArray, _roomVm, _mapVm);
+        _factory = new GenieDockFactory(_gameOutputVm, _rawOutputVm, streamVmArray, _roomVm);
         var layout = _factory.CreateLayout();
         _factory.InitLayout(layout);
 
@@ -334,8 +331,87 @@ public partial class MainWindow : Window
         });
         ApplyHighlightAndAppend(echoLine);
 
+        if (TryHandleGoto(expanded)) return;
+
         if (!_aliases.TryProcess(expanded))
             _engine.ProcessInput(expanded);
+    }
+
+    private bool TryHandleGoto(string input)
+    {
+        var trimmed = input.TrimStart();
+        if (trimmed.Length == 0 || trimmed[0] != '#') return false;
+
+        var space = trimmed.IndexOf(' ');
+        var name  = (space < 0 ? trimmed[1..] : trimmed[1..space]).ToLowerInvariant();
+        var arg   = space < 0 ? string.Empty : trimmed[(space + 1)..].Trim();
+
+        if (name is not ("goto" or "go" or "g" or "walk" or "walkto")) return false;
+
+        if (string.IsNullOrEmpty(arg))
+        {
+            AppendOutput("[mapper] Goto - please specify a room title or partial name to travel to.");
+            return true;
+        }
+
+        var current = _mapperEngine.CurrentNode;
+        if (current is null)
+        {
+            _mapperEngine.Recalculate();
+            current = _mapperEngine.CurrentNode;
+        }
+        if (current is null)
+        {
+            AppendOutput($"[mapper] Current location \"{_gslGameState.RoomTitle}\" is not in the loaded map. Try selecting a different zone.");
+            return true;
+        }
+
+        var zone = _mapperEngine.ActiveZone;
+
+        // Match priority: numeric ID → exact note label → note label StartsWith
+        //                 → exact title → title StartsWith → title/notes Contains
+        Genie4.Core.Mapper.MapNode? target = null;
+
+        if (int.TryParse(arg, out int idArg) && zone.Nodes.TryGetValue(idArg, out var byId))
+            target = byId;
+
+        bool NoteLabelMatches(string notes, Func<string, bool> pred)
+            => !string.IsNullOrEmpty(notes) &&
+               notes.Split('|').Any(label => pred(label.Trim()));
+
+        target ??= zone.Nodes.Values.FirstOrDefault(n =>
+                       NoteLabelMatches(n.Notes, l => string.Equals(l, arg, StringComparison.OrdinalIgnoreCase)))
+                ?? zone.Nodes.Values.FirstOrDefault(n =>
+                       NoteLabelMatches(n.Notes, l => l.StartsWith(arg, StringComparison.OrdinalIgnoreCase)))
+                ?? zone.Nodes.Values.FirstOrDefault(n => string.Equals(n.Title, arg, StringComparison.OrdinalIgnoreCase))
+                ?? zone.Nodes.Values.FirstOrDefault(n => n.Title.StartsWith(arg, StringComparison.OrdinalIgnoreCase))
+                ?? zone.Nodes.Values.FirstOrDefault(n => n.Title.Contains(arg, StringComparison.OrdinalIgnoreCase))
+                ?? zone.Nodes.Values.FirstOrDefault(n => !string.IsNullOrEmpty(n.Notes) &&
+                                                          n.Notes.Contains(arg, StringComparison.OrdinalIgnoreCase));
+
+        if (target is null)
+        {
+            AppendOutput($"[mapper] Destination \"{arg}\" not found.");
+            return true;
+        }
+
+        if (target.Id == current.Id)
+        {
+            AppendOutput("[mapper] Already there.");
+            return true;
+        }
+
+        var path = _mapperEngine.FindPath(current, target);
+        if (path is null || path.Count == 0)
+        {
+            AppendOutput($"[mapper] No path to \"{target.Title}\".");
+            return true;
+        }
+
+        AppendOutput($"[mapper] Walking to \"{target.Title}\" ({path.Count} steps).");
+        foreach (var move in path)
+            _engine.ProcessInput(move);
+        return true;
     }
 
     private async void OnMenuConnectProfile(object? sender, RoutedEventArgs e)
@@ -501,8 +577,8 @@ public partial class MainWindow : Window
 
         WindowsMenu.Items.Add(new Separator());
 
-        // Right-panel dockables (Room + Map)
-        foreach (var vm in new Dock.Model.Core.IDockable[] { _roomVm, _mapVm })
+        // Right-panel dockables (Room)
+        foreach (var vm in new Dock.Model.Core.IDockable[] { _roomVm })
         {
             _toggleablePanels.Add((vm, vm.Owner as Dock.Model.Core.IDock ?? _factory.StreamsDock!));
             var item = new MenuItem { Header = vm.Title, Tag = vm };
@@ -548,9 +624,6 @@ public partial class MainWindow : Window
                              ?? _factory!.StreamsDock!;
             else if (vm == _roomVm)
                 targetDock = _factory!.Find(d => d.Id == "RoomPanel") as Dock.Model.Core.IDock
-                             ?? _factory!.StreamsDock!;
-            else if (vm == _mapVm)
-                targetDock = _factory!.Find(d => d.Id == "MapPanel") as Dock.Model.Core.IDock
                              ?? _factory!.StreamsDock!;
             else
                 targetDock = _factory!.StreamsDock!;
@@ -614,8 +687,29 @@ public partial class MainWindow : Window
 
     private void OnMenuToggleMapper(object? sender, RoutedEventArgs e)
     {
-        _mapperEngine.IsEnabled = !_mapperEngine.IsEnabled;
+        _mapperEngine.IsEnabled = EnableMapperMenuItem.IsChecked;
         AppendOutput($"[mapper] Automapper {(_mapperEngine.IsEnabled ? "enabled" : "disabled")}");
+    }
+
+    private void OnMenuShowMapWindow(object? sender, RoutedEventArgs e)
+    {
+        if (_mapWindow is null)
+        {
+            _mapWindow = new MapWindow();
+            _mapWindow.Initialize(
+                _mapperEngine,
+                DataPath("maps"),
+                cmd => _engine.ProcessInput(cmd),
+                _currentZonePath);
+            _mapWindow.CurrentZonePathChanged = p => _currentZonePath = p;
+            _mapWindow.Closed += (_, _) => _mapWindow = null;
+            _mapWindow.Show();
+        }
+        else
+        {
+            _mapWindow.RefreshZoneList(_currentZonePath);
+            _mapWindow.Activate();
+        }
     }
 
     private void OnMenuExit(object? sender, RoutedEventArgs e) => Close();

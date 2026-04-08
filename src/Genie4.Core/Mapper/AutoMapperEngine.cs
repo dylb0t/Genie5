@@ -8,7 +8,7 @@ public sealed class AutoMapperEngine
     private GslGameState? _state;
 
     // Fingerprint → NodeId for fast room matching
-    private readonly Dictionary<string, Guid> _fingerprintIndex = new();
+    private readonly Dictionary<string, int> _fingerprintIndex = new();
 
     // State between room transitions
     private string  _lastTitle = string.Empty;
@@ -58,6 +58,20 @@ public sealed class AutoMapperEngine
         CurrentNode = null;
         CurrentNodeChanged?.Invoke();
         MapChanged?.Invoke();
+        Recalculate();
+    }
+
+    /// <summary>
+    /// Force a re-evaluation of the current room from the latest GslGameState,
+    /// even if title/exits haven't changed since the last check. Used after
+    /// loading a zone or when the user issues #goto and CurrentNode is null.
+    /// </summary>
+    public void Recalculate()
+    {
+        if (_state is null) return;
+        _lastTitle   = string.Empty;
+        _lastExitKey = string.Empty;
+        OnStateChanged();
     }
 
     public MapZone NewZone(string name)
@@ -121,6 +135,7 @@ public sealed class AutoMapperEngine
             // New room — create node and assign coordinates
             node = new MapNode
             {
+                Id          = NextNodeId(),
                 Title       = title,
                 Description = description,
             };
@@ -187,6 +202,63 @@ public sealed class AutoMapperEngine
         node.X = prev.X + delta.dx;
         node.Y = prev.Y + delta.dy;
         node.Z = prev.Z + delta.dz;
+    }
+
+    /// <summary>
+    /// BFS from <paramref name="start"/> to <paramref name="destination"/> through linked exits.
+    /// Returns the ordered move commands to walk the path, or null if unreachable.
+    /// </summary>
+    public IReadOnlyList<string>? FindPath(MapNode start, MapNode destination)
+    {
+        if (start.Id == destination.Id) return Array.Empty<string>();
+
+        var cameFromNode = new Dictionary<int, int>();
+        var cameFromMove = new Dictionary<int, string>();
+        var queue = new Queue<MapNode>();
+        queue.Enqueue(start);
+        var visited = new HashSet<int> { start.Id };
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            foreach (var exit in current.Exits)
+            {
+                if (!exit.DestinationId.HasValue) continue;
+                var destId = exit.DestinationId.Value;
+                if (!visited.Add(destId)) continue;
+                if (!_zone.Nodes.TryGetValue(destId, out var next)) continue;
+
+                cameFromNode[destId] = current.Id;
+                cameFromMove[destId] = string.IsNullOrEmpty(exit.MoveCommand)
+                    ? exit.Direction.ToString().ToLowerInvariant()
+                    : exit.MoveCommand;
+
+                if (destId == destination.Id)
+                {
+                    // Reconstruct
+                    var moves = new List<string>();
+                    var cursor = destId;
+                    while (cursor != start.Id)
+                    {
+                        moves.Add(cameFromMove[cursor]);
+                        cursor = cameFromNode[cursor];
+                    }
+                    moves.Reverse();
+                    return moves;
+                }
+
+                queue.Enqueue(next);
+            }
+        }
+        return null;
+    }
+
+    private int NextNodeId()
+    {
+        int max = 0;
+        foreach (var id in _zone.Nodes.Keys)
+            if (id > max) max = id;
+        return max + 1;
     }
 
     private void RebuildIndex()

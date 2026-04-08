@@ -14,9 +14,8 @@ namespace Genie4.Core.Mapper;
 ///     &lt;/node&gt;
 ///   &lt;/zone&gt;
 ///
-/// Node IDs in Genie4 are integers local to the zone file.
-/// We generate stable Guids from (zoneName + nodeId) so the same file always
-/// produces the same Guids — enabling re-import without duplicating nodes.
+/// Node IDs in Genie4 are integers local to the zone file. Genie5 preserves
+/// them as-is so users can reference rooms by their Genie4 ID (e.g. #goto 232).
 /// </summary>
 public static class Genie4MapImporter
 {
@@ -32,27 +31,16 @@ public static class Genie4MapImporter
         if (string.IsNullOrEmpty(zoneName))
             zoneName = Path.GetFileNameWithoutExtension(xmlPath);
 
-        var zoneIdStr = zoneEl.GetAttribute("id");
+        var zone = new MapZone { Name = zoneName };
 
-        var zone = new MapZone
-        {
-            Id   = StableGuid($"zone:{zoneIdStr}:{zoneName}"),
-            Name = zoneName,
-        };
-
-        // ── Pass 1: build all nodes ──────────────────────────────────────────
-        // Map Genie4 integer IDs → Guids so arcs can be resolved in pass 2.
-        var idMap = new Dictionary<string, Guid>(); // genie4 id → guid
-
+        // ── Pass 1: build all nodes (preserve Genie4 integer IDs) ────────────
         foreach (XmlElement nodeEl in zoneEl.SelectNodes("node")!)
         {
-            var g4Id = nodeEl.GetAttribute("id");
-            var guid = StableGuid($"{zoneIdStr}:{zoneName}:node:{g4Id}");
-            idMap[g4Id] = guid;
+            if (!int.TryParse(nodeEl.GetAttribute("id"), out int nodeId)) continue;
 
             var node = new MapNode
             {
-                Id    = guid,
+                Id    = nodeId,
                 Title = nodeEl.GetAttribute("name"),
             };
 
@@ -60,6 +48,12 @@ public static class Genie4MapImporter
             var descEl = nodeEl.SelectSingleNode("description");
             if (descEl != null)
                 node.Description = descEl.InnerText.Trim();
+
+            // Note — Genie4's per-room note (used by #goto for label lookup,
+            // multiple labels separated by '|').
+            var noteEl = nodeEl.SelectSingleNode("note");
+            if (noteEl != null)
+                node.Notes = noteEl.InnerText.Trim();
 
             // Position
             var posEl = nodeEl.SelectSingleNode("position") as XmlElement;
@@ -75,15 +69,14 @@ public static class Genie4MapImporter
                 node.Z = pz;
             }
 
-            zone.Nodes[guid] = node;
+            zone.Nodes[nodeId] = node;
         }
 
         // ── Pass 2: resolve arcs ─────────────────────────────────────────────
         foreach (XmlElement nodeEl in zoneEl.SelectNodes("node")!)
         {
-            var g4Id = nodeEl.GetAttribute("id");
-            if (!idMap.TryGetValue(g4Id, out var nodeGuid)) continue;
-            var node = zone.Nodes[nodeGuid];
+            if (!int.TryParse(nodeEl.GetAttribute("id"), out int nodeId)) continue;
+            if (!zone.Nodes.TryGetValue(nodeId, out var node)) continue;
 
             foreach (XmlElement arcEl in nodeEl.SelectNodes("arc")!)
             {
@@ -93,15 +86,15 @@ public static class Genie4MapImporter
 
                 var dir = DirectionHelper.Parse(exitStr);
 
-                Guid? destGuid = null;
-                if (!string.IsNullOrEmpty(destStr) && idMap.TryGetValue(destStr, out var dg))
-                    destGuid = dg;
+                int? destId = null;
+                if (int.TryParse(destStr, out int parsedDest) && zone.Nodes.ContainsKey(parsedDest))
+                    destId = parsedDest;
 
                 node.Exits.Add(new MapExit
                 {
                     Direction     = dir,
                     MoveCommand   = string.IsNullOrEmpty(moveStr) ? exitStr : moveStr,
-                    DestinationId = destGuid,
+                    DestinationId = destId,
                 });
             }
         }
@@ -125,11 +118,4 @@ public static class Genie4MapImporter
         return results;
     }
 
-    // Produces a deterministic Guid from a string key via MD5.
-    private static Guid StableGuid(string key)
-    {
-        var hash = System.Security.Cryptography.MD5.HashData(
-            System.Text.Encoding.UTF8.GetBytes(key));
-        return new Guid(hash);
-    }
 }

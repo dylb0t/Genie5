@@ -14,7 +14,6 @@ public sealed class GenieDockFactory : Factory
     private readonly GameOutputViewModel   _rawVm;
     private readonly GameOutputViewModel[] _streamVms;
     private readonly RoomViewModel         _roomVm;
-    private readonly MapViewModel          _mapVm;
 
     private IRootDock?   _rootDock;
     public  DocumentDock? StreamsDock { get; private set; }
@@ -22,14 +21,12 @@ public sealed class GenieDockFactory : Factory
     public GenieDockFactory(GameOutputViewModel mainVm,
                             GameOutputViewModel rawVm,
                             GameOutputViewModel[] streamVms,
-                            RoomViewModel roomVm,
-                            MapViewModel mapVm)
+                            RoomViewModel roomVm)
     {
         _mainVm    = mainVm;
         _rawVm     = rawVm;
         _streamVms = streamVms;
         _roomVm    = roomVm;
-        _mapVm     = mapVm;
     }
 
     public override IRootDock CreateLayout()
@@ -74,27 +71,16 @@ public sealed class GenieDockFactory : Factory
                 streamsDock)
         };
 
-        // Right panel: room info (top) + map canvas (bottom)
+        // Right panel: room info only (map is a floating window)
         var roomDock = new DocumentDock
         {
             Id                = "RoomPanel",
             Title             = "Room",
             IsCollapsable     = false,
             CanCreateDocument = false,
-            Proportion        = 0.40,
+            Proportion        = 1.0,
             VisibleDockables  = CreateList<IDockable>(_roomVm),
             ActiveDockable    = _roomVm
-        };
-
-        var mapDock = new DocumentDock
-        {
-            Id                = "MapPanel",
-            Title             = "Map",
-            IsCollapsable     = false,
-            CanCreateDocument = false,
-            Proportion        = 0.60,
-            VisibleDockables  = CreateList<IDockable>(_mapVm),
-            ActiveDockable    = _mapVm
         };
 
         var rightPanel = new ProportionalDock
@@ -103,10 +89,7 @@ public sealed class GenieDockFactory : Factory
             Orientation      = Orientation.Vertical,
             IsCollapsable    = false,
             Proportion       = 0.28,
-            VisibleDockables = CreateList<IDockable>(
-                roomDock,
-                new ProportionalDockSplitter { Id = "RoomMapSplitter" },
-                mapDock)
+            VisibleDockables = CreateList<IDockable>(roomDock)
         };
 
         var rootLayout = new ProportionalDock
@@ -138,7 +121,6 @@ public sealed class GenieDockFactory : Factory
             [_mainVm.Id] = () => _mainVm,
             [_rawVm.Id]  = () => _rawVm,
             [_roomVm.Id] = () => _roomVm,
-            [_mapVm.Id]  = () => _mapVm,
         };
         foreach (var vm in _streamVms)
             ContextLocator[vm.Id] = () => vm;
