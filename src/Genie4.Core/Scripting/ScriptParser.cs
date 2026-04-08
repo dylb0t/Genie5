@@ -98,34 +98,98 @@ public static class ScriptParser
             var afterThen = rest[(thenIdx + 4)..].Trim();
             if (afterThen.Length > 0) continue; // inline form, no block
 
-            // Block form: find first non-empty line whose indent ≤ this line's indent.
-            int end = inst.Lines.Count;
-            for (int j = i + 1; j < inst.Lines.Count; j++)
-            {
-                if (inst.Lines[j].Trimmed.Length == 0) continue;
-                if (inst.Lines[j].Indent <= line.Indent) { end = j; break; }
-            }
+            // Detect brace style: next non-empty line is "{" alone.
+            int braceOpen = NextNonEmpty(inst, i + 1);
+            bool useBraces = braceOpen >= 0 && inst.Lines[braceOpen].Trimmed == "{";
 
-            // Optional else at the same indent as the if
-            if (end < inst.Lines.Count
-                && inst.Lines[end].Indent == line.Indent
-                && IsElseLine(inst.Lines[end].Trimmed))
+            int bodyStart, bodyEnd;
+            if (useBraces)
             {
-                int elseLine = end;
-                int elseEnd  = inst.Lines.Count;
-                for (int j = elseLine + 1; j < inst.Lines.Count; j++)
-                {
-                    if (inst.Lines[j].Trimmed.Length == 0) continue;
-                    if (inst.Lines[j].Indent <= line.Indent) { elseEnd = j; break; }
-                }
-                inst.IfFalseJump[i]      = elseLine + 1;
-                inst.ElseJump[elseLine]  = elseEnd;
+                bodyStart = braceOpen + 1;
+                bodyEnd   = FindMatchingBrace(inst, braceOpen);
+                if (bodyEnd < 0) continue; // unmatched
             }
             else
             {
-                inst.IfFalseJump[i] = end;
+                // Indent-based block: lines indented further than the if.
+                bodyStart = i + 1;
+                bodyEnd   = inst.Lines.Count;
+                for (int j = bodyStart; j < inst.Lines.Count; j++)
+                {
+                    if (inst.Lines[j].Trimmed.Length == 0) continue;
+                    if (inst.Lines[j].Indent <= line.Indent) { bodyEnd = j; break; }
+                }
+            }
+
+            // Optional else: the next non-empty token after the body that
+            // begins with "else" (at the same indent as the if for indent
+            // form, or any indent for brace form).
+            int afterBody  = useBraces ? bodyEnd + 1 : bodyEnd;
+            int elseLineIx = NextNonEmpty(inst, afterBody);
+            bool hasElse = elseLineIx >= 0
+                        && IsElseLine(inst.Lines[elseLineIx].Trimmed)
+                        && (useBraces || inst.Lines[elseLineIx].Indent == line.Indent);
+
+            if (!hasElse)
+            {
+                // false-branch: jump straight past the body
+                inst.IfFalseJump[i] = useBraces ? bodyEnd : bodyEnd;
+                continue;
+            }
+
+            // Else body
+            int elseBodyStart, elseBodyEnd;
+            int elseBraceOpen = NextNonEmpty(inst, elseLineIx + 1);
+            bool elseUseBraces = elseBraceOpen >= 0
+                              && inst.Lines[elseBraceOpen].Trimmed == "{";
+            if (elseUseBraces)
+            {
+                elseBodyStart = elseBraceOpen + 1;
+                elseBodyEnd   = FindMatchingBrace(inst, elseBraceOpen);
+                if (elseBodyEnd < 0) { inst.IfFalseJump[i] = bodyEnd; continue; }
+            }
+            else
+            {
+                elseBodyStart = elseLineIx + 1;
+                elseBodyEnd   = inst.Lines.Count;
+                for (int j = elseBodyStart; j < inst.Lines.Count; j++)
+                {
+                    if (inst.Lines[j].Trimmed.Length == 0) continue;
+                    if (inst.Lines[j].Indent <= line.Indent) { elseBodyEnd = j; break; }
+                }
+            }
+
+            // When the if-condition is false: jump to the start of the else
+            // body (skip past the else line itself and any opening brace).
+            inst.IfFalseJump[i]         = elseBodyStart;
+            // When the true branch finishes, the else line is reached: skip
+            // past the entire else body.
+            inst.ElseJump[elseLineIx]   = elseUseBraces ? elseBodyEnd + 1 : elseBodyEnd;
+        }
+    }
+
+    private static int NextNonEmpty(ScriptInstance inst, int from)
+    {
+        for (int j = from; j < inst.Lines.Count; j++)
+            if (inst.Lines[j].Trimmed.Length > 0) return j;
+        return -1;
+    }
+
+    /// <summary>Find the matching '}' for a '{' at <paramref name="openIdx"/>.</summary>
+    private static int FindMatchingBrace(ScriptInstance inst, int openIdx)
+    {
+        int depth = 1;
+        for (int j = openIdx + 1; j < inst.Lines.Count; j++)
+        {
+            var t = inst.Lines[j].Trimmed;
+            if (t == "{") depth++;
+            else if (t == "}")
+            {
+                depth--;
+                if (depth == 0) return j;
             }
         }
+        return -1;
     }
 
     private static bool IsElseLine(string t)

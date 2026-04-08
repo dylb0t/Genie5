@@ -31,7 +31,11 @@ public static class Genie4MapImporter
         if (string.IsNullOrEmpty(zoneName))
             zoneName = Path.GetFileNameWithoutExtension(xmlPath);
 
-        var zone = new MapZone { Name = zoneName };
+        var zone = new MapZone
+        {
+            Name     = zoneName,
+            Genie4Id = zoneEl.GetAttribute("id"),
+        };
 
         // ── Pass 1: build all nodes (preserve Genie4 integer IDs) ────────────
         foreach (XmlElement nodeEl in zoneEl.SelectNodes("node")!)

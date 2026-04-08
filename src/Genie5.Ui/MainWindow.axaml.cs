@@ -356,6 +356,7 @@ public partial class MainWindow : Window
         if (!ok) return;
 
         _lastGameCode = dialog.IsSimutronics ? dialog.ResultGameCode : null;
+        _scripts.Globals["game"] = _lastGameCode ?? string.Empty;
         _lastHost     = dialog.ResultHost;
         _lastPort     = dialog.ResultPort;
 
@@ -381,6 +382,8 @@ public partial class MainWindow : Window
     private async Task ConnectSgeAsync(string gameCode, string character,
                                         string account, string password)
     {
+        _lastGameCode = gameCode;
+        _scripts.Globals["game"] = gameCode;
         AppendOutput($"[authenticating as {account} for {gameCode}...]");
 
         SgeLoginResult result;

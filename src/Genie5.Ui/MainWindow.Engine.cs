@@ -95,6 +95,19 @@ public partial class MainWindow
                 _ = _client.SendAsync(cmd);
             },
             AppendOutput);
+
+        // Push mapper state into script globals so scripts can read $zoneid /
+        // $roomid / $zonename like Genie4. Updated whenever the engine
+        // recognises a new room.
+        _mapperEngine.CurrentNodeChanged += () =>
+        {
+            var node = _mapperEngine.CurrentNode;
+            var zone = _mapperEngine.ActiveZone;
+            _scripts.Globals["zoneid"]   = zone.Genie4Id ?? string.Empty;
+            _scripts.Globals["zonename"] = zone.Name     ?? string.Empty;
+            _scripts.Globals["roomid"]   = node?.Id.ToString() ?? "0";
+            _scripts.Globals["roomname"] = node?.Title  ?? string.Empty;
+        };
         _mapper.SetInitialZonePath(defaultZonePath);
         _mapper.ZoneChanged += () => Avalonia.Threading.Dispatcher.UIThread.Post(
             () => _mapWindow?.RefreshZoneList(_mapper.CurrentZonePath));
@@ -276,6 +289,7 @@ public partial class MainWindow
         public void SendToGame(string text, bool userInput = false, string origin = "")
         {
             _window._mapperEngine?.OnCommandSent(text);
+            _window._scripts?.Extensions.DispatchCommand(text);
             _window._commandSinceLastPrompt = true;
             _ = _window._client.SendAsync(text);
         }

@@ -32,4 +32,16 @@ public sealed class ScriptInstance
     public DateTime WaitForDeadline = DateTime.MaxValue;
 
     public bool IsBlocked => Paused || InMatchWait || WaitForPattern != null;
+
+    // action triggers — persistent, fire whenever a matching line arrives
+    public List<ScriptAction> Actions = new();
+    public bool ActionsEnabled = true;
+}
+
+public sealed class ScriptAction
+{
+    public string Pattern  = string.Empty;
+    public string Command  = string.Empty; // statement to run on match (script-level, not raw send)
+    public bool   IsRegex;
+    public bool   Enabled = true;
 }

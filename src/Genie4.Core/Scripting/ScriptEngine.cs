@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using Genie4.Core.Extensions;
+using Genie4.Core.Extensions.Builtin;
 
 namespace Genie4.Core.Scripting;
 
@@ -25,6 +27,20 @@ public sealed class ScriptEngine
 
     private int _inFlight;
 
+    /// <summary>
+    /// Session-wide global variables, accessible from scripts as <c>$Name</c>.
+    /// Populated by <c>#tvar</c>, the EXP tracker, and host code (mapper, profile, etc).
+    /// Case-insensitive.
+    /// </summary>
+    public Dictionary<string, string> Globals { get; }
+        = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// In-process extension manager. Built-in trackers (EXP, info) are
+    /// registered at construction; future plugins will register here too.
+    /// </summary>
+    public ExtensionManager Extensions { get; }
+
     public ScriptEngine(string scriptsDir, TypeAheadSession typeAhead,
                         Action<string> sendCommand, Action<string> echo)
     {
@@ -32,7 +48,23 @@ public sealed class ScriptEngine
         _typeAhead   = typeAhead;
         _sendCommand = sendCommand;
         _echo        = echo;
+        Extensions   = new ExtensionManager(new EngineExtensionHost(this));
+        Extensions.Register(new ExpTrackerExtension());
+        Extensions.Register(new InfoTrackerExtension());
         Directory.CreateDirectory(_scriptsDir);
+    }
+
+    /// <summary>
+    /// Adapts <see cref="ScriptEngine"/> to the <see cref="IExtensionHost"/>
+    /// surface. Extensions only see this — never the engine itself.
+    /// </summary>
+    private sealed class EngineExtensionHost : IExtensionHost
+    {
+        private readonly ScriptEngine _engine;
+        public EngineExtensionHost(ScriptEngine engine) { _engine = engine; }
+        public IDictionary<string, string> Globals  => _engine.Globals;
+        public void Echo(string text)               => _engine._echo(text);
+        public void SendCommand(string command)     => _engine._sendCommand(command);
     }
 
     public string ScriptsDir => _scriptsDir;
@@ -100,7 +132,14 @@ public sealed class ScriptEngine
 
     public void OnGameLine(string line)
     {
-        if (string.IsNullOrEmpty(line) || _instances.Count == 0) return;
+        if (string.IsNullOrEmpty(line)) return;
+
+        // Always dispatch to extensions — trackers must populate their
+        // globals even when no scripts are running, so the next script that
+        // starts sees up-to-date values.
+        Extensions.DispatchGameLine(line);
+
+        if (_instances.Count == 0) return;
 
         for (int i = 0; i < _instances.Count; i++)
         {
@@ -114,6 +153,22 @@ public sealed class ScriptEngine
                 {
                     inst.WaitForPattern  = null;
                     inst.WaitForDeadline = DateTime.MaxValue;
+                }
+            }
+
+            // action triggers — persistent, fire on every matching line
+            if (inst.ActionsEnabled && inst.Actions.Count > 0)
+            {
+                // snapshot — actions may add/remove themselves while firing
+                var snapshot = inst.Actions.ToArray();
+                foreach (var act in snapshot)
+                {
+                    if (!act.Enabled) continue;
+                    if (!TryMatch(line, act.Pattern, act.IsRegex, inst, capture: true)) continue;
+                    var sub = SubstituteVars(act.Command, inst);
+                    try { Dispatch(sub, inst, 0, -1); }
+                    catch (Exception ex)
+                    { _echo($"[script] {inst.Name} action error: {ex.Message}"); }
                 }
             }
 
@@ -139,6 +194,7 @@ public sealed class ScriptEngine
     public void OnPrompt()
     {
         if (_inFlight > 0) _inFlight--;
+        Extensions.DispatchPrompt();
         Tick();
     }
 
@@ -202,6 +258,9 @@ public sealed class ScriptEngine
         var t = line.Trimmed;
         if (t.Length == 0 || t[0] == '#') return true;
         if ((t[0] == ':' || t[^1] == ':') && !t.Contains(' ')) return true;
+        // Brace block delimiters are structural — the parser already mapped
+        // jumps over them; at runtime they're no-ops.
+        if (t == "{" || t == "}") return true;
 
         var substituted = SubstituteVars(t, inst);
         return Dispatch(substituted, inst, line.LineNumber, currentIdx);
@@ -235,7 +294,7 @@ public sealed class ScriptEngine
                 var condText  = rest[..thenIdx].Trim();
                 var afterThen = rest[(thenIdx + 4)..].Trim();
                 bool cond;
-                try { cond = ScriptExpression.EvalBool(condText, inst); }
+                try { cond = ScriptExpression.EvalBool(condText, inst, Globals); }
                 catch (Exception ex)
                 {
                     _echo($"[script] {inst.Name}:{lineNo} expr error: {ex.Message}");
@@ -251,12 +310,20 @@ public sealed class ScriptEngine
 
             case "put":
             case "send":
+                // Genie meta-commands routed via 'put' (#tvar, #echo, #mapper, ...)
+                // are intercepted here instead of being sent to the game.
+                if (rest.Length > 0 && rest[0] == '#')
+                {
+                    HandleMetaCommand(rest, inst);
+                    return true;
+                }
                 if (_inFlight >= _typeAhead.Limit)
                 {
                     inst.Pc--; // re-execute next tick when budget frees up
                     return false;
                 }
                 _inFlight++;
+                Extensions.DispatchCommand(rest);
                 _sendCommand(rest);
                 return true;
 
@@ -266,6 +333,7 @@ public sealed class ScriptEngine
 
             case "pause":
             case "wait":
+            case "delay":
             {
                 double secs = 1.0;
                 if (!string.IsNullOrWhiteSpace(rest) &&
@@ -345,6 +413,10 @@ public sealed class ScriptEngine
                 return true;
             }
 
+            case "action":
+                HandleAction(rest, inst, lineNo);
+                return true;
+
             case "eval":
             case "evalmath":
             {
@@ -356,7 +428,7 @@ public sealed class ScriptEngine
                 }
                 try
                 {
-                    var result = ScriptExpression.Eval(expr, inst);
+                    var result = ScriptExpression.Eval(expr, inst, Globals);
                     inst.Vars[vn.Trim()] = lower == "evalmath"
                         ? ScriptExpression.ToNum(result).ToString("0.################", CultureInfo.InvariantCulture)
                         : ScriptExpression.ToStr(result);
@@ -390,6 +462,136 @@ public sealed class ScriptEngine
         return true;
     }
 
+    /// <summary>
+    /// Handle a Genie-style meta-command, e.g. <c>#tvar Foo 1</c>, <c>#var Foo 1</c>,
+    /// <c>#echo &gt;Log #DAF7A6 ...</c>, <c>#mapper reset</c>. These arrive via
+    /// <c>put #...</c> in scripts and never reach the game.
+    /// </summary>
+    private void HandleMetaCommand(string text, ScriptInstance inst)
+    {
+        var (cmd, rest) = SplitCmd(text); // cmd starts with '#'
+        switch (cmd.ToLowerInvariant())
+        {
+            case "#tvar":
+            {
+                // #tvar Name Value
+                var (name, value) = SplitCmd(rest);
+                if (name.Length > 0) Globals[name] = value;
+                return;
+            }
+            case "#var":
+            {
+                // #var Name Value — script-local
+                var (name, value) = SplitCmd(rest);
+                if (name.Length > 0) inst.Vars[name] = value;
+                return;
+            }
+            case "#echo":
+            {
+                // #echo [>Window] [#RRGGBB] message — strip Window/colour args.
+                var msg = rest;
+                while (msg.Length > 0)
+                {
+                    var (tok, after) = SplitCmd(msg);
+                    if (tok.Length > 0 && (tok[0] == '>' || tok[0] == '#'))
+                    { msg = after; continue; }
+                    break;
+                }
+                _echo(msg);
+                return;
+            }
+            case "#mapper":
+                // No-op for now; mapper reset is informational only.
+                return;
+            default:
+                // Unknown meta-commands are silently ignored so scripts that
+                // assume Genie4 plugins don't error out.
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Handle the <c>action</c> family. Forms:
+    ///   action on | off
+    ///   action clear
+    ///   action remove &lt;pattern&gt;
+    ///   action &lt;command&gt; when &lt;pattern&gt;
+    ///   action &lt;command&gt; whenre &lt;regex&gt;
+    /// The 'when' / 'whenre' keyword splits left/right; whatever comes before
+    /// is the command body, whatever comes after is the trigger pattern. The
+    /// command body is dispatched as a normal script statement on each fire.
+    /// </summary>
+    private void HandleAction(string rest, ScriptInstance inst, int lineNo)
+    {
+        var trimmed = rest.Trim();
+        if (trimmed.Length == 0)
+        {
+            _echo($"[script] {inst.Name}:{lineNo} action: missing arguments");
+            return;
+        }
+
+        if (trimmed.Equals("on",    StringComparison.OrdinalIgnoreCase)) { inst.ActionsEnabled = true;  return; }
+        if (trimmed.Equals("off",   StringComparison.OrdinalIgnoreCase)) { inst.ActionsEnabled = false; return; }
+        if (trimmed.Equals("clear", StringComparison.OrdinalIgnoreCase)) { inst.Actions.Clear();        return; }
+
+        if (trimmed.StartsWith("remove ", StringComparison.OrdinalIgnoreCase))
+        {
+            var pat = trimmed[7..].Trim();
+            int n = inst.Actions.RemoveAll(a =>
+                string.Equals(a.Pattern, pat, StringComparison.OrdinalIgnoreCase));
+            if (n == 0) _echo($"[script] action: no trigger matched '{pat}'");
+            return;
+        }
+
+        // Locate " when " or " whenre " outside of quoted strings.
+        int whenIdx = FindKeywordOutsideQuotes(trimmed, "when");
+        int whenreIdx = FindKeywordOutsideQuotes(trimmed, "whenre");
+        bool isRegex = false;
+        int kwIdx, kwLen;
+        if (whenreIdx >= 0 && (whenIdx < 0 || whenreIdx <= whenIdx))
+        { kwIdx = whenreIdx; kwLen = 6; isRegex = true; }
+        else if (whenIdx >= 0)
+        { kwIdx = whenIdx; kwLen = 4; }
+        else
+        {
+            _echo($"[script] {inst.Name}:{lineNo} action: missing 'when' / 'whenre'");
+            return;
+        }
+
+        var cmd = trimmed[..kwIdx].Trim();
+        var pattern = trimmed[(kwIdx + kwLen)..].Trim();
+        if (cmd.Length == 0 || pattern.Length == 0)
+        {
+            _echo($"[script] {inst.Name}:{lineNo} action: empty command or pattern");
+            return;
+        }
+
+        inst.Actions.Add(new ScriptAction
+        {
+            Command = cmd,
+            Pattern = pattern,
+            IsRegex = isRegex,
+            Enabled = true,
+        });
+    }
+
+    private static int FindKeywordOutsideQuotes(string s, string keyword)
+    {
+        bool inStr = false;
+        for (int i = 0; i + keyword.Length <= s.Length; i++)
+        {
+            if (s[i] == '"') { inStr = !inStr; continue; }
+            if (inStr) continue;
+            if (i > 0 && !char.IsWhiteSpace(s[i - 1])) continue;
+            if (!string.Equals(s.Substring(i, keyword.Length), keyword,
+                               StringComparison.OrdinalIgnoreCase)) continue;
+            int after = i + keyword.Length;
+            if (after < s.Length && !char.IsWhiteSpace(s[after])) continue;
+            return i;
+        }
+        return -1;
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private static (string cmd, string rest) SplitCmd(string s)
@@ -400,7 +602,7 @@ public sealed class ScriptEngine
         return (s[..i], s[(i + 1)..].Trim());
     }
 
-    private static string SubstituteVars(string text, ScriptInstance inst)
+    private string SubstituteVars(string text, ScriptInstance inst)
     {
         if (text.IndexOf('%') < 0 && text.IndexOf('$') < 0) return text;
         var sb = new StringBuilder(text.Length);
@@ -409,10 +611,19 @@ public sealed class ScriptEngine
             char c = text[i];
             if (c != '%' && c != '$') { sb.Append(c); continue; }
             int j = i + 1;
-            while (j < text.Length && (char.IsLetterOrDigit(text[j]) || text[j] == '_')) j++;
+            // Allow letters, digits, _ and . in variable names so identifiers
+            // like Athletics.Ranks resolve as a single token.
+            while (j < text.Length &&
+                   (char.IsLetterOrDigit(text[j]) || text[j] == '_' || text[j] == '.'))
+                j++;
             if (j == i + 1) { sb.Append(c); continue; }
             var name = text[(i + 1)..j];
-            sb.Append(inst.Vars.TryGetValue(name, out var v) ? v : string.Empty);
+            string value;
+            if (c == '$')
+                value = Globals.TryGetValue(name, out var gv) ? gv : string.Empty;
+            else
+                value = inst.Vars.TryGetValue(name, out var lv) ? lv : string.Empty;
+            sb.Append(value);
             i = j - 1;
         }
         return sb.ToString();

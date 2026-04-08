@@ -20,15 +20,19 @@ namespace Genie4.Core.Scripting;
 /// </summary>
 internal sealed class ScriptExpression
 {
-    private readonly string         _src;
-    private readonly ScriptInstance _inst;
+    private readonly string                       _src;
+    private readonly ScriptInstance               _inst;
+    private readonly IDictionary<string, string>? _globals;
     private int _pos;
 
-    private ScriptExpression(string src, ScriptInstance inst) { _src = src; _inst = inst; }
+    private ScriptExpression(string src, ScriptInstance inst,
+                              IDictionary<string, string>? globals)
+    { _src = src; _inst = inst; _globals = globals; }
 
-    public static object Eval(string src, ScriptInstance inst)
+    public static object Eval(string src, ScriptInstance inst,
+                               IDictionary<string, string>? globals = null)
     {
-        var p = new ScriptExpression(src, inst);
+        var p = new ScriptExpression(src, inst, globals);
         var v = p.ParseOr();
         p.SkipWs();
         if (p._pos < p._src.Length)
@@ -36,8 +40,13 @@ internal sealed class ScriptExpression
         return v;
     }
 
-    public static bool   EvalBool(string src, ScriptInstance inst) => ToBool(Eval(src, inst));
-    public static string EvalString(string src, ScriptInstance inst) => ToStr(Eval(src, inst));
+    public static bool   EvalBool(string src, ScriptInstance inst,
+                                    IDictionary<string, string>? globals = null)
+        => ToBool(Eval(src, inst, globals));
+
+    public static string EvalString(string src, ScriptInstance inst,
+                                      IDictionary<string, string>? globals = null)
+        => ToStr(Eval(src, inst, globals));
 
     // ── Coercion ────────────────────────────────────────────────────────────
 
@@ -302,7 +311,8 @@ internal sealed class ScriptExpression
     private object ParseIdentOrCall()
     {
         int s = _pos;
-        while (_pos < _src.Length && (char.IsLetterOrDigit(_src[_pos]) || _src[_pos] == '_'))
+        while (_pos < _src.Length &&
+               (char.IsLetterOrDigit(_src[_pos]) || _src[_pos] == '_' || _src[_pos] == '.'))
             _pos++;
         var name = _src[s.._pos];
 
@@ -369,6 +379,19 @@ internal sealed class ScriptExpression
                 while ((idx = s.IndexOf(sep, idx, StringComparison.Ordinal)) >= 0)
                 { n++; idx += sep.Length; }
                 return (double)n;
+            }
+            case "def":
+            {
+                // def(Name) — true if Name exists as a global or local var and
+                // has a non-empty value. Genie4 scripts use this for guards
+                // like:  if !def(Athletics.Ranks) then ...
+                var n = A(0);
+                if (string.IsNullOrEmpty(n)) return false;
+                if (_globals != null && _globals.TryGetValue(n, out var gv) && !string.IsNullOrEmpty(gv))
+                    return true;
+                if (_inst.Vars.TryGetValue(n, out var lv) && !string.IsNullOrEmpty(lv))
+                    return true;
+                return false;
             }
             case "abs": return Math.Abs(N(0));
             case "min": return Math.Min(N(0), N(1));
