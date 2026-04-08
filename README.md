@@ -71,11 +71,8 @@ TcpGameClient.LineReceived
 
 ### Key design decisions
 
-- **GslParser** is a streaming character-level parser. It tracks XML depth with `<`/`>` counting rather than a full XML parser, because the server sends XML fragments mixed with plain text. Complete fragments are handed to `ProcessFragment()` for XmlDocument parsing.
-- **Multi-fragment elements** (`<compass>…</compass>`, `<component>…</component>`) span multiple fragments. The parser accumulates them using parser-level fields (`_pendingCompassDirs`, `_pendingComponentId`) that survive line boundaries, emitting events only on the closing tag.
-- **`<left>` / `<right>` tags** carry hand contents with `noun` and `exist` attributes. These are mapped to `ComponentEvent("lhand"/"rhand", text)` so the same `GslGameState` path handles them.
 - **Stream routing** — named `pushStream` blocks route text to sub-stream `DocumentDock` panels. Unknown stream IDs (e.g., `room`) are suppressed as text; their structured data still arrives via component/vitals events.
-- **Custom controls** (`CompassView`, `BodyView`) are pure `Control` subclasses using `Render(DrawingContext)` overrides — no AXAML, no bitmaps. The compass draws 8 triangular arrows with `StreamGeometry`; lit exits use a bright fill.
+- **Custom controls** (`CompassView`, `BodyView`) are pure `Control` subclasses using `Render(DrawingContext)` overrides — no AXAML, no bitmaps. The compass draws 8 triangular arrows with `StreamGeometry`; lit exits use a bright fill. I may change this in later builds to make it look better.
 - **`GslGameState`** is the single mutable game state object. It is only written on the UI thread (via `Dispatcher.UIThread.Post`) and read by all UI components through the `StateChanged` event.
 
 ## TODO
@@ -100,5 +97,6 @@ TcpGameClient.LineReceived
 - [ ] Clickable compass to go a direction
 - [ ] Ability to run both genie scripts and lich scripts
 - [ ] Select to copy (setable)
+- [ ] Sound support
 
 
