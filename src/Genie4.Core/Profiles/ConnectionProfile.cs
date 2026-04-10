@@ -15,6 +15,9 @@ public sealed class ConnectionProfile
     public string Host            { get; set; } = string.Empty;
     public int    Port            { get; set; } = 4000;
 
+    // Only one profile may have this set; auto-connects on startup.
+    public bool   AutoConnect       { get; set; }
+
     // AES-GCM encrypted, base64: nonce(12) + tag(16) + ciphertext
     public string EncryptedPassword { get; set; } = string.Empty;
 }

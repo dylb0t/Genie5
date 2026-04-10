@@ -348,7 +348,7 @@ public sealed class MapperController
             _engine.LoadZone(zone);
             CurrentZonePath = file;
             ZoneChanged?.Invoke();
-            _appendOutput($"[mapper] Loaded zone \"{zone.Name}\" containing current room.");
+            _appendOutput($"[mapper] Loaded zone \"{zone.Name}\" containing current room, \"{title}\".");
             return _engine.CurrentNode is not null;
         }
         return false;

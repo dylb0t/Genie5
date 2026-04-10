@@ -43,7 +43,9 @@ public partial class DialogProfileConnect : Window
         if (!ok) return;
 
         _store.Add(dialog.ResultName, dialog.ResultHost, dialog.ResultPort,
-                   dialog.ResultAccount, dialog.ResultPassword);
+                   dialog.ResultAccount, dialog.ResultPassword,
+                   dialog.ResultIsSimu, dialog.ResultGameCode,
+                   dialog.ResultCharacter, dialog.ResultAutoConnect);
         _store.Save(_storePath);
         Refresh();
     }
@@ -61,7 +63,8 @@ public partial class DialogProfileConnect : Window
             dialog.ResultName, dialog.ResultIsSimu,
             dialog.ResultGameCode, dialog.ResultCharacter,
             dialog.ResultHost, dialog.ResultPort,
-            dialog.ResultAccount, dialog.ResultPassword);
+            dialog.ResultAccount, dialog.ResultPassword,
+            dialog.ResultAutoConnect);
         _store.Save(_storePath);
         Refresh();
     }

@@ -22,14 +22,24 @@ public sealed class ProfileStore
         => File.WriteAllText(path, JsonSerializer.Serialize(_profiles, _json));
 
     public ConnectionProfile Add(string name, string host, int port,
-                                  string accountName, string plainPassword)
+                                  string accountName, string plainPassword,
+                                  bool isSimutronics = false, string gameCode = "",
+                                  string characterName = "", bool autoConnect = false)
     {
+        // Ensure only one profile is auto-connect.
+        if (autoConnect)
+            foreach (var other in _profiles) other.AutoConnect = false;
+
         var profile = new ConnectionProfile
         {
             Name              = name,
+            IsSimutronics     = isSimutronics,
+            GameCode          = gameCode,
+            CharacterName     = characterName,
             Host              = host,
             Port              = port,
             AccountName       = accountName,
+            AutoConnect       = autoConnect,
             EncryptedPassword = ProfileCrypto.Encrypt(plainPassword)
         };
         _profiles.Add(profile);
@@ -39,7 +49,8 @@ public sealed class ProfileStore
     public void Update(Guid id, string name, bool isSimutronics,
                        string gameCode, string characterName,
                        string host, int port,
-                       string accountName, string plainPassword)
+                       string accountName, string plainPassword,
+                       bool autoConnect = false)
     {
         var p = _profiles.FirstOrDefault(x => x.Id == id);
         if (p is null) return;
@@ -52,7 +63,16 @@ public sealed class ProfileStore
         p.AccountName   = accountName;
         if (!string.IsNullOrEmpty(plainPassword))
             p.EncryptedPassword = ProfileCrypto.Encrypt(plainPassword);
+        // Ensure only one profile is auto-connect.
+        if (autoConnect)
+            foreach (var other in _profiles)
+                if (other.Id != id) other.AutoConnect = false;
+        p.AutoConnect = autoConnect;
     }
+
+    /// <summary>Returns the profile marked for auto-connect, or null.</summary>
+    public ConnectionProfile? GetAutoConnectProfile()
+        => _profiles.FirstOrDefault(p => p.AutoConnect);
 
     public void Remove(Guid id) => _profiles.RemoveAll(p => p.Id == id);
 

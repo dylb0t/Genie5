@@ -94,20 +94,21 @@ public partial class MainWindow
                 _commandSinceLastPrompt = true;
                 _ = _client.SendAsync(cmd);
             },
-            AppendOutput);
+            AppendOutput,
+            hashCmd => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                // Route # commands from scripts through the same path as
+                // user-typed input: mapper (#goto), script control (#script),
+                // and eventually other UI commands.
+                if (_mapper.TryHandleGoto(hashCmd)) return;
+                if (TryHandleScriptCommand(hashCmd)) return;
+                // Unknown # commands are silently dropped.
+            }));
 
         // Push mapper state into script globals so scripts can read $zoneid /
-        // $roomid / $zonename like Genie4. Updated whenever the engine
-        // recognises a new room.
-        _mapperEngine.CurrentNodeChanged += () =>
-        {
-            var node = _mapperEngine.CurrentNode;
-            var zone = _mapperEngine.ActiveZone;
-            _scripts.Globals["zoneid"]   = zone.Genie4Id ?? string.Empty;
-            _scripts.Globals["zonename"] = zone.Name     ?? string.Empty;
-            _scripts.Globals["roomid"]   = node?.Id.ToString() ?? "0";
-            _scripts.Globals["roomname"] = node?.Title  ?? string.Empty;
-        };
+        // $roomid / $zonename like Genie4. Refreshed whenever the engine
+        // recognises a new room (read-only, no auto-resolve).
+        _mapperEngine.CurrentNodeChanged += () => RefreshMapperGlobals(autoResolve: false);
         _mapper.SetInitialZonePath(defaultZonePath);
         _mapper.ZoneChanged += () => Avalonia.Threading.Dispatcher.UIThread.Post(
             () => _mapWindow?.RefreshZoneList(_mapper.CurrentZonePath));
@@ -155,6 +156,7 @@ public partial class MainWindow
 
                 // Let the mapper observe lines for type-ahead errors.
                 _mapper.OnGameLine(plainText);
+                RefreshMapperGlobals();
                 _scripts.OnGameLine(plainText);
 
                 // Suppress repeated prompts: only show the prompt line when output
@@ -202,6 +204,35 @@ public partial class MainWindow
     }
 
     internal string ProfilesPath => DataPath("profiles.json");
+
+    /// <summary>
+    /// Mirror the mapper's view of the current room into script globals.
+    /// Called both from <c>CurrentNodeChanged</c> and opportunistically from
+    /// the line pipeline so scripts that start mid-session see sane values.
+    /// </summary>
+    private bool _refreshingMapperGlobals;
+    private void RefreshMapperGlobals(bool autoResolve = true)
+    {
+        if (_scripts is null || _mapperEngine is null) return;
+        if (_refreshingMapperGlobals) return;
+        _refreshingMapperGlobals = true;
+        try {
+        // If the mapper hasn't yet identified our room (e.g. the script is
+        // starting while the default empty zone is loaded), ask the
+        // controller to scan imported zones for one that contains us.
+        // Only do this from the post-Apply line pipeline — never from inside
+        // a CurrentNodeChanged handler, as ResolveCurrentNode → Recalculate
+        // will re-fire the event and recurse.
+        if (autoResolve && _mapperEngine.CurrentNode is null)
+            _mapper?.ResolveCurrentNode();
+        var node = _mapperEngine.CurrentNode;
+        var zone = _mapperEngine.ActiveZone;
+        _scripts.Globals["zoneid"]   = zone?.Genie4Id ?? string.Empty;
+        _scripts.Globals["zonename"] = zone?.Name     ?? string.Empty;
+        _scripts.Globals["roomid"]   = node?.Id.ToString() ?? "0";
+        _scripts.Globals["roomname"] = node?.Title  ?? string.Empty;
+        } finally { _refreshingMapperGlobals = false; }
+    }
 
     // Called after all VMs are created so Settings can be attached.
     internal void AttachWindowSettings(

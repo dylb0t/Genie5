@@ -17,6 +17,7 @@ public partial class DialogProfileEdit : Window
     public int    ResultPort      { get; private set; }
     public string ResultAccount   { get; private set; } = string.Empty;
     public string ResultPassword  { get; private set; } = string.Empty;
+    public bool   ResultAutoConnect { get; private set; }
 
     public DialogProfileEdit()
     {
@@ -35,6 +36,8 @@ public partial class DialogProfileEdit : Window
 
         NameBox.Text     = profile.Name;
         AccountBox.Text  = profile.AccountName;
+
+        AutoConnectBox.IsChecked = profile.AutoConnect;
 
         if (profile.IsSimutronics)
         {
@@ -92,9 +95,10 @@ public partial class DialogProfileEdit : Window
             ResultIsSimu  = false;
         }
 
-        ResultName     = name;
-        ResultAccount  = account;
-        ResultPassword = PasswordBox.Text ?? string.Empty;
+        ResultName        = name;
+        ResultAccount     = account;
+        ResultPassword    = PasswordBox.Text ?? string.Empty;
+        ResultAutoConnect = AutoConnectBox.IsChecked == true;
         Close(true);
     }
 

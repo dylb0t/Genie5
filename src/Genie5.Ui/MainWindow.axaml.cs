@@ -116,6 +116,19 @@ public partial class MainWindow : Window
         AppendOutput("\x1b[31mRed text\x1b[0m back to normal");
         AppendOutput("\x1b[32mGreen\x1b[0m and \x1b[34mBlue\x1b[0m");
         AppendOutput("\x1b[1mBold text\x1b[0m");
+
+        // Auto-connect: if a profile is flagged, connect after the window is shown.
+        var autoProfile = _profiles.GetAutoConnectProfile();
+        if (autoProfile != null)
+        {
+            // Defer until the window is rendered so the UI is ready.
+            Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+            {
+                var password = _profiles.GetPassword(autoProfile);
+                AppendOutput($"[auto-connecting: {autoProfile.Name}]");
+                await ConnectProfileAsync(autoProfile, password);
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        }
     }
 
     // Called for plain-text lines (demo output, echo, connection messages)

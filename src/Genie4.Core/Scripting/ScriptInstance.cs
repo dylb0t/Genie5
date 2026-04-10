@@ -31,7 +31,11 @@ public sealed class ScriptInstance
     public bool     WaitForIsRegex;
     public DateTime WaitForDeadline = DateTime.MaxValue;
 
-    public bool IsBlocked => Paused || InMatchWait || WaitForPattern != null;
+    // waiteval state — block until expression becomes true
+    public string?  WaitEvalExpr;
+    public DateTime WaitEvalDeadline = DateTime.MaxValue;
+
+    public bool IsBlocked => Paused || InMatchWait || WaitForPattern != null || WaitEvalExpr != null;
 
     // action triggers — persistent, fire whenever a matching line arrives
     public List<ScriptAction> Actions = new();
@@ -43,6 +47,9 @@ public sealed class ScriptInstance
 
     // 'timer start' baseline for the %timer pseudo-variable.
     public DateTime? TimerStart;
+
+    // Shared RNG for the 'random' command.
+    public Random Rng = new();
 }
 
 public sealed class ScriptAction
@@ -51,5 +58,7 @@ public sealed class ScriptAction
     public string Pattern  = string.Empty;
     public string Command  = string.Empty; // statement to run on match (script-level, not raw send)
     public bool   IsRegex;
+    public bool   IsEval;                  // 'when eval <expr>' form — Pattern holds the expression
     public bool   Enabled  = true;
+    public bool   LastEvalResult;          // used to detect rising-edge for when-eval actions
 }

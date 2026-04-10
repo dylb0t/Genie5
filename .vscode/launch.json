@@ -2,11 +2,11 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run Genie5 Smoke Test",
+      "name": "Run Genie5 Ui",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/tests/Genie4.Core.Smoke/bin/Debug/net8.0/Genie4.Core.Smoke.dll",
-      "args": [],
+      "program": "dotnet",
+      "args": ["run","--project", "src/Genie5.Ui"],
       "cwd": "${workspaceFolder}",
       "console": "internalConsole",
       "stopAtEntry": false

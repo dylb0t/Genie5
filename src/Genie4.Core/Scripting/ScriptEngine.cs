@@ -23,6 +23,7 @@ public sealed class ScriptEngine
     private readonly TypeAheadSession     _typeAhead;
     private readonly Action<string>       _sendCommand;
     private readonly Action<string>       _echo;
+    private readonly Action<string>?      _handleHashCmd;
     private readonly string               _scriptsDir;
 
     private int _inFlight;
@@ -42,12 +43,14 @@ public sealed class ScriptEngine
     public ExtensionManager Extensions { get; }
 
     public ScriptEngine(string scriptsDir, TypeAheadSession typeAhead,
-                        Action<string> sendCommand, Action<string> echo)
+                        Action<string> sendCommand, Action<string> echo,
+                        Action<string>? handleHashCmd = null)
     {
-        _scriptsDir  = scriptsDir;
-        _typeAhead   = typeAhead;
-        _sendCommand = sendCommand;
-        _echo        = echo;
+        _scriptsDir   = scriptsDir;
+        _typeAhead    = typeAhead;
+        _sendCommand  = sendCommand;
+        _echo         = echo;
+        _handleHashCmd = handleHashCmd;
         Extensions   = new ExtensionManager(new EngineExtensionHost(this));
         Extensions.Register(new ExpTrackerExtension());
         Extensions.Register(new InfoTrackerExtension());
@@ -93,6 +96,7 @@ public sealed class ScriptEngine
 
         for (int i = 0; i < args.Count; i++)
             inst.Vars[(i + 1).ToString()] = args[i];
+        inst.Vars["0"] = string.Join(" ", args);
         inst.Vars["scriptname"] = name;
 
         _instances.Add(inst);
@@ -156,21 +160,7 @@ public sealed class ScriptEngine
                 }
             }
 
-            // action triggers — persistent, fire on every matching line
-            if (inst.ActionsEnabled && inst.Actions.Count > 0)
-            {
-                // snapshot — actions may add/remove themselves while firing
-                var snapshot = inst.Actions.ToArray();
-                foreach (var act in snapshot)
-                {
-                    if (!act.Enabled) continue;
-                    if (!TryMatch(line, act.Pattern, act.IsRegex, inst, capture: true)) continue;
-                    var sub = SubstituteVars(act.Command, inst);
-                    try { Dispatch(sub, inst, 0, -1); }
-                    catch (Exception ex)
-                    { _echo($"[script] {inst.Name} action error: {ex.Message}"); }
-                }
-            }
+            FireActions(inst, line);
 
             // match / matchre + matchwait
             if (inst.InMatchWait)
@@ -195,6 +185,10 @@ public sealed class ScriptEngine
     {
         if (_inFlight > 0) _inFlight--;
         Extensions.DispatchPrompt();
+        // Re-check eval-form actions each prompt so transitions in globals
+        // (e.g. preset timers) fire even without a corresponding game line.
+        for (int i = 0; i < _instances.Count; i++)
+            FireActions(_instances[i], null);
         Tick();
     }
 
@@ -235,8 +229,52 @@ public sealed class ScriptEngine
                     else continue;
                 }
 
+                if (inst.WaitEvalExpr != null)
+                {
+                    // Re-evaluate each tick — cheap and matches Genie4 semantics
+                    // of "unblock as soon as the condition flips to true".
+                    bool done = false;
+                    try { done = ScriptExpression.EvalBool(inst.WaitEvalExpr, inst, Globals); }
+                    catch { /* treat parse error as still-waiting */ }
+                    if (done || DateTime.UtcNow >= inst.WaitEvalDeadline)
+                    { inst.WaitEvalExpr = null; inst.WaitEvalDeadline = DateTime.MaxValue; }
+                    else continue;
+                }
+
                 if (StepOne(inst)) progress = true;
             }
+        }
+    }
+
+    /// <summary>Run registered actions against either a game line (regex/literal
+    /// patterns) or, when <paramref name="line"/> is null, against eval-form
+    /// actions only. Eval actions fire on rising edge (false → true).</summary>
+    private void FireActions(ScriptInstance inst, string? line)
+    {
+        if (!inst.ActionsEnabled || inst.Actions.Count == 0) return;
+        var snapshot = inst.Actions.ToArray();
+        foreach (var act in snapshot)
+        {
+            if (!act.Enabled) continue;
+            bool fire;
+            if (act.IsEval)
+            {
+                bool cur;
+                try { cur = ScriptExpression.EvalBool(act.Pattern, inst, Globals); }
+                catch { cur = false; }
+                fire = cur && !act.LastEvalResult;
+                act.LastEvalResult = cur;
+            }
+            else
+            {
+                if (line is null) continue;
+                fire = TryMatch(line, act.Pattern, act.IsRegex, inst, capture: true);
+            }
+            if (!fire) continue;
+            var sub = SubstituteVars(act.Command, inst);
+            try { Dispatch(sub, inst, 0, -1); }
+            catch (Exception ex)
+            { _echo($"[script] {inst.Name} action error: {ex.Message}"); }
         }
     }
 
@@ -388,11 +426,20 @@ public sealed class ScriptEngine
 
             case "gosub":
             {
-                var (label, _) = SplitCmd(rest);
+                var (label, gosubArgs) = SplitCmd(rest);
                 if (!inst.Labels.TryGetValue(label.Trim(), out var ss))
                 { _echo($"[script] unknown label: {label}"); inst.Running = false; return false; }
                 inst.GosubStack.Push(inst.Pc);
                 inst.Pc = ss + 1;
+                // Gosub arguments: %0/$0 = full arg string, %1/$1..%9/$9 = individual args.
+                // These overwrite the caller's values; Genie4 does the same.
+                if (!string.IsNullOrEmpty(gosubArgs))
+                {
+                    inst.Vars["0"] = gosubArgs;
+                    var parts = gosubArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    for (int a = 0; a < 9; a++)
+                        inst.Vars[(a + 1).ToString()] = a < parts.Length ? parts[a] : string.Empty;
+                }
                 return true;
             }
 
@@ -441,11 +488,57 @@ public sealed class ScriptEngine
                 inst.WaitForDeadline = DateTime.MaxValue;
                 return false;
 
+            case "waiteval":
+                // waiteval <expression> — block until expression evaluates true.
+                // The expression is stored raw (not substituted) so live
+                // variable state is re-read on each evaluation.
+                inst.WaitEvalExpr     = rest;
+                inst.WaitEvalDeadline = DateTime.MaxValue;
+                return false;
+
+            case "debug":
+                // Genie debug level — not wired, treated as a no-op so scripts
+                // that toggle verbosity don't fail.
+                return true;
+
+            case "shift":
+                // Shifts %1→drop, %2→%1, etc. — for walking command-line args.
+                for (int k = 1; k <= 9; k++)
+                {
+                    if (inst.Vars.TryGetValue((k + 1).ToString(), out var nv))
+                        inst.Vars[k.ToString()] = nv;
+                    else
+                        inst.Vars.Remove(k.ToString());
+                }
+                return true;
+
             case "var":
             case "setvariable":
             {
                 var (vn, vv) = SplitCmd(rest);
                 inst.Vars[vn.Trim()] = vv;
+                return true;
+            }
+
+            case "unvar":
+            case "deletevariable":
+                inst.Vars.Remove(rest.Trim());
+                return true;
+
+            case "random":
+            {
+                // random <min> <max>  → picks an integer in [min, max] (inclusive)
+                // and stores it in %r, matching Genie3/4 semantics.
+                var (aStr, bStr) = SplitCmd(rest);
+                if (!int.TryParse(aStr.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var lo) ||
+                    !int.TryParse(bStr.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var hi))
+                {
+                    _echo($"[script] {inst.Name}:{lineNo} random: usage 'random <min> <max>'");
+                    return true;
+                }
+                if (hi < lo) (lo, hi) = (hi, lo);
+                inst.Vars["r"] = inst.Rng.Next(lo, hi + 1)
+                    .ToString(CultureInfo.InvariantCulture);
                 return true;
             }
 
@@ -612,9 +705,15 @@ public sealed class ScriptEngine
             case "#mapper":
                 // No-op for now; mapper reset is informational only.
                 return;
+            case "#parse":
+                // Inject fake game text — feeds match/action/waitfor pipelines
+                // as if the server had emitted it.
+                OnGameLine(rest);
+                return;
             default:
-                // Unknown meta-commands are silently ignored so scripts that
-                // assume Genie4 plugins don't error out.
+                // Forward unhandled # commands (e.g. #goto, #script) to the
+                // host so the UI / mapper can process them.
+                _handleHashCmd?.Invoke(text);
                 return;
         }
     }
@@ -702,12 +801,23 @@ public sealed class ScriptEngine
             return;
         }
 
+        // 'action X when eval <expr>' — eval form. Fires each tick where expr
+        // transitions from false → true (rising edge), so repeated matches on
+        // a persistent truthy condition don't spam.
+        bool isEval = false;
+        if (!isRegex && pattern.StartsWith("eval ", StringComparison.OrdinalIgnoreCase))
+        {
+            isEval  = true;
+            pattern = pattern[5..].Trim();
+        }
+
         inst.Actions.Add(new ScriptAction
         {
             Label   = label,
             Command = cmd,
             Pattern = pattern,
             IsRegex = isRegex,
+            IsEval  = isEval,
             Enabled = true,
         });
     }
@@ -777,14 +887,21 @@ public sealed class ScriptEngine
         {
             char c = text[i];
             if (c != '%' && c != '$') { sb.Append(c); continue; }
-            int j = i + 1;
+            // `%%name` / `$$name` forces a second lookup: first fetch the
+            // named var's value, then use that value as a variable name for
+            // a second lookup. Matches Genie4's double-evaluation semantics.
+            bool doubleEval = false;
+            int nameStart = i + 1;
+            if (i + 1 < text.Length && text[i + 1] == c)
+            { doubleEval = true; nameStart = i + 2; }
+            int j = nameStart;
             // Allow letters, digits, _ and . in variable names so identifiers
             // like Athletics.Ranks resolve as a single token.
             while (j < text.Length &&
                    (char.IsLetterOrDigit(text[j]) || text[j] == '_' || text[j] == '.'))
                 j++;
-            if (j == i + 1) { sb.Append(c); continue; }
-            var name = text[(i + 1)..j];
+            if (j == nameStart) { sb.Append(c); continue; }
+            var name = text[nameStart..j];
             string value;
             // Pseudo-variables: computed on each substitution rather than stored.
             if (name.Equals("timer", StringComparison.OrdinalIgnoreCase))
@@ -794,9 +911,47 @@ public sealed class ScriptEngine
                     : "0";
             }
             else if (c == '$')
-                value = Globals.TryGetValue(name, out var gv) ? gv : string.Empty;
+            {
+                // $0..$9 are script-local (gosub args / regex captures) —
+                // check inst.Vars first before falling through to Globals.
+                if (inst.Vars.TryGetValue(name, out var sv) && !string.IsNullOrEmpty(sv))
+                    value = sv;
+                else
+                    value = Globals.TryGetValue(name, out var gv) ? gv : string.Empty;
+            }
             else
                 value = inst.Vars.TryGetValue(name, out var lv) ? lv : string.Empty;
+            if (doubleEval && !string.IsNullOrEmpty(value))
+            {
+                // Use the fetched value as the key for a second lookup,
+                // pulling from the same scope as the original sigil.
+                value = c == '$'
+                    ? (Globals.TryGetValue(value, out var g2) ? g2 : string.Empty)
+                    : (inst.Vars.TryGetValue(value, out var l2) ? l2 : string.Empty);
+            }
+            // Array indexing: %Bags(0) splits the pipe-delimited value and
+            // returns the element at that index (0-based). The index itself
+            // may already have been substituted (e.g. %Bags(%BagLoop)).
+            if (j < text.Length && text[j] == '(')
+            {
+                int close = text.IndexOf(')', j + 1);
+                if (close > j)
+                {
+                    var idxRaw = text[(j + 1)..close].Trim();
+                    // The index may itself contain %vars (e.g. %Bags(%BagLoop)),
+                    // so substitute before parsing as an integer.
+                    var idxStr = SubstituteVars(idxRaw, inst);
+                    if (int.TryParse(idxStr, NumberStyles.Integer,
+                                     CultureInfo.InvariantCulture, out var arrIdx))
+                    {
+                        var parts = value.Split('|');
+                        value = arrIdx >= 0 && arrIdx < parts.Length
+                            ? parts[arrIdx]
+                            : string.Empty;
+                    }
+                    j = close + 1;
+                }
+            }
             sb.Append(value);
             i = j - 1;
         }

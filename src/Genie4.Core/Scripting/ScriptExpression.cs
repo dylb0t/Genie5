@@ -107,12 +107,31 @@ internal sealed class ScriptExpression
         return true;
     }
 
+    /// <summary>Match a word-boundary keyword (case-insensitive). Used for
+    /// Genie4 logical keywords <c>and</c>, <c>or</c>, <c>not</c> so they
+    /// aren't parsed as bare identifiers.</summary>
+    private bool MatchWord(string word)
+    {
+        SkipWs();
+        if (_pos + word.Length > _src.Length) return false;
+        if (string.Compare(_src, _pos, word, 0, word.Length,
+                           StringComparison.OrdinalIgnoreCase) != 0) return false;
+        int end = _pos + word.Length;
+        if (end < _src.Length)
+        {
+            char n = _src[end];
+            if (char.IsLetterOrDigit(n) || n == '_') return false;
+        }
+        _pos = end;
+        return true;
+    }
+
     // ── Grammar ─────────────────────────────────────────────────────────────
 
     private object ParseOr()
     {
         var l = ParseAnd();
-        while (Match("||"))
+        while (Match("||") || MatchWord("or"))
         {
             var r = ParseAnd();
             l = ToBool(l) || ToBool(r);
@@ -123,7 +142,7 @@ internal sealed class ScriptExpression
     private object ParseAnd()
     {
         var l = ParseNot();
-        while (Match("&&"))
+        while (Match("&&") || MatchWord("and"))
         {
             var r = ParseNot();
             l = ToBool(l) && ToBool(r);
@@ -140,6 +159,7 @@ internal sealed class ScriptExpression
             _pos++;
             return !ToBool(ParseNot());
         }
+        if (MatchWord("not")) return !ToBool(ParseNot());
         return ParseCmp();
     }
 
@@ -281,15 +301,20 @@ internal sealed class ScriptExpression
             {
                 _pos++;
                 char esc = _src[_pos];
-                sb.Append(esc switch
+                switch (esc)
                 {
-                    'n'  => '\n',
-                    't'  => '\t',
-                    'r'  => '\r',
-                    '\\' => '\\',
-                    '"'  => '"',
-                    _    => esc,
-                });
+                    case 'n':  sb.Append('\n'); break;
+                    case 't':  sb.Append('\t'); break;
+                    case 'r':  sb.Append('\r'); break;
+                    case '\\': sb.Append('\\'); break;
+                    case '"':  sb.Append('"');  break;
+                    default:
+                        // Preserve the backslash for unrecognised sequences
+                        // so regex escapes like \[ \] \b \d pass through intact.
+                        sb.Append('\\');
+                        sb.Append(esc);
+                        break;
+                }
                 _pos++;
             }
             else
@@ -373,9 +398,13 @@ internal sealed class ScriptExpression
             case "length":     return (double)A(0).Length;
             case "count":
             {
+                // Genie4 semantics: element count when splitting the list by
+                // the separator. "a|b|c" with "|" → 3, not 2. Empty string
+                // yields 0 elements; empty separator falls back to char count.
                 var s = A(0); var sep = A(1);
-                if (sep.Length == 0) return 0.0;
-                int n = 0, idx = 0;
+                if (s.Length == 0) return 0.0;
+                if (sep.Length == 0) return (double)s.Length;
+                int n = 1, idx = 0;
                 while ((idx = s.IndexOf(sep, idx, StringComparison.Ordinal)) >= 0)
                 { n++; idx += sep.Length; }
                 return (double)n;
@@ -396,6 +425,51 @@ internal sealed class ScriptExpression
             case "abs": return Math.Abs(N(0));
             case "min": return Math.Min(N(0), N(1));
             case "max": return Math.Max(N(0), N(1));
+            case "replace":
+                return A(0).Replace(A(1), A(2));
+            case "replacere":
+                try { return Regex.Replace(A(0), A(1), A(2)); }
+                catch { return A(0); }
+            case "match":
+                return A(0).IndexOf(A(1), StringComparison.OrdinalIgnoreCase) >= 0;
+            case "substr":
+            {
+                var s = A(0);
+                int st = (int)N(1);
+                if (st < 0) st = 0;
+                if (st >= s.Length) return "";
+                if (args.Count < 3) return s.Substring(st);
+                int ln = (int)N(2);
+                if (ln < 0) ln = 0;
+                if (st + ln > s.Length) ln = s.Length - st;
+                return s.Substring(st, ln);
+            }
+            case "trim":   return A(0).Trim();
+            case "indexof":
+                return (double)A(0).IndexOf(A(1), StringComparison.OrdinalIgnoreCase);
+            case "lastindexof":
+                return (double)A(0).LastIndexOf(A(1), StringComparison.OrdinalIgnoreCase);
+            case "element":
+            {
+                // element(list, index [, sep])  — default separator is '|'
+                var list = A(0);
+                int ix = (int)N(1);
+                var sep = args.Count >= 3 ? A(2) : "|";
+                var parts = list.Split(new[] { sep }, StringSplitOptions.None);
+                return ix >= 0 && ix < parts.Length ? parts[ix] : "";
+            }
+            case "floor":   return Math.Floor(N(0));
+            case "ceiling":
+            case "ceil":    return Math.Ceiling(N(0));
+            case "round":   return args.Count >= 2
+                                ? Math.Round(N(0), (int)N(1))
+                                : Math.Round(N(0));
+            case "sqrt":    return Math.Sqrt(N(0));
+            case "log":
+            case "ln":      return Math.Log(N(0));
+            case "log10":   return Math.Log10(N(0));
+            case "neg":     return -Math.Abs(N(0));
+            case "pos":     return Math.Abs(N(0));
         }
         throw new Exception($"unknown function: {name}");
     }

@@ -9,6 +9,12 @@
       "problemMatcher": "$msCompile"
     },
     {
+      "label": "Run Ui",
+      "command": "dotnet",
+      "type": "process",
+      "args": ["run","--project", "src/Genie5.Ui"]
+    },
+    {
       "label": "run smoke test",
       "command": "dotnet",
       "type": "process",
