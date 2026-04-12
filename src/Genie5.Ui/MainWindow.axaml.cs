@@ -111,12 +111,6 @@ public partial class MainWindow : Window
 
         Closing += (_, _) => SaveData();
 
-        // Demo output
-        AppendOutput("Normal text");
-        AppendOutput("\x1b[31mRed text\x1b[0m back to normal");
-        AppendOutput("\x1b[32mGreen\x1b[0m and \x1b[34mBlue\x1b[0m");
-        AppendOutput("\x1b[1mBold text\x1b[0m");
-
         // Auto-connect: if a profile is flagged, connect after the window is shown.
         var autoProfile = _profiles.GetAutoConnectProfile();
         if (autoProfile != null)

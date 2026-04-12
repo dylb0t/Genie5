@@ -56,3 +56,6 @@ public sealed record InvLineEvent(string ContainerId, string Text) : GslEvent;
 
 /// <summary><clearContainer id="stow"/> — clear the inv stream window for a fresh listing.</summary>
 public sealed record ClearContainerEvent(string ContainerId) : GslEvent;
+
+/// <summary><nav rm="12345"/> — server-provided unique room ID.</summary>
+public sealed record NavEvent(string RoomId) : GslEvent;

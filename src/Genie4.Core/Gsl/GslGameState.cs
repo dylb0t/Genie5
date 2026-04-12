@@ -51,6 +51,9 @@ public sealed class GslGameState
 
     // ── Navigation ───────────────────────────────────────────────────────────
 
+    /// Server-assigned unique room ID from <c>&lt;nav rm="..."/&gt;</c>.
+    public string ServerRoomId { get; private set; } = string.Empty;
+
     public IReadOnlyList<string> Exits { get; private set; } = [];
 
     // ── Room ─────────────────────────────────────────────────────────────────
@@ -114,6 +117,10 @@ public sealed class GslGameState
 
                 case CompassEvent e:
                     Exits = e.Exits;
+                    break;
+
+                case NavEvent e:
+                    ServerRoomId = e.RoomId;
                     break;
 
                 case PushStreamEvent e:

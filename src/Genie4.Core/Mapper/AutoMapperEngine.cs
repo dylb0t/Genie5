@@ -10,6 +10,9 @@ public sealed class AutoMapperEngine
     // Fingerprint → NodeId for fast room matching
     private readonly Dictionary<string, int> _fingerprintIndex = new();
 
+    // ServerRoomId → NodeId for exact room matching via <nav rm="..."/>
+    private readonly Dictionary<string, int> _serverRoomIndex = new(StringComparer.OrdinalIgnoreCase);
+
     // State between room transitions
     private string  _lastTitle = string.Empty;
     private string  _lastExitKey = string.Empty; // sorted join used for change detection
@@ -23,6 +26,12 @@ public sealed class AutoMapperEngine
 
     public event Action? MapChanged;
     public event Action? CurrentNodeChanged;
+    /// <summary>
+    /// Raised when the engine can't find the current room in the active zone
+    /// (lookup-only mode). The controller should try loading a different zone
+    /// that contains the room.
+    /// </summary>
+    public event Action? RoomNotFoundInZone;
 
     public AutoMapperEngine(MapZone zone)
     {
@@ -108,9 +117,10 @@ public sealed class AutoMapperEngine
 
     private void OnRoomChanged(string title, string description, IReadOnlyCollection<string> exits)
     {
-        var fingerprint = MapFingerprint.Compute(title, exits);
-        var prevNode    = CurrentNode;
-        var usedDir     = _pendingDirection;
+        var fingerprint   = MapFingerprint.Compute(title, exits);
+        var serverRoomId  = _state?.ServerRoomId ?? string.Empty;
+        var prevNode      = CurrentNode;
+        var usedDir       = _pendingDirection;
 
         // Always clear pending direction after consuming it
         _pendingDirection = Direction.None;
@@ -118,23 +128,45 @@ public sealed class AutoMapperEngine
         bool zoneChanged = false;
 
         // ── 1. Find or create the node ───────────────────────────────────────
-        MapNode node;
-        if (_fingerprintIndex.TryGetValue(fingerprint, out var existingId) &&
-            _zone.Nodes.TryGetValue(existingId, out var existingNode))
+        // Priority: server room ID → fingerprint → create new
+        MapNode? node = null;
+        if (!string.IsNullOrEmpty(serverRoomId) &&
+            _serverRoomIndex.TryGetValue(serverRoomId, out var srvId) &&
+            _zone.Nodes.TryGetValue(srvId, out var srvNode))
+        {
+            node = srvNode;
+        }
+        else if (_fingerprintIndex.TryGetValue(fingerprint, out var existingId) &&
+                 _zone.Nodes.TryGetValue(existingId, out var existingNode))
         {
             node = existingNode;
+        }
+
+        if (node != null)
+        {
             // Update description if it arrives after first visit
             if (string.IsNullOrEmpty(node.Description) && !string.IsNullOrEmpty(description))
             {
                 node.Description = description;
                 zoneChanged = true;
             }
+            // Stamp server room ID on nodes that don't have it yet
+            if (!string.IsNullOrEmpty(serverRoomId) && string.IsNullOrEmpty(node.ServerRoomId))
+            {
+                node.ServerRoomId = serverRoomId;
+                _serverRoomIndex.TryAdd(serverRoomId, node.Id);
+                zoneChanged = true;
+            }
         }
         else if (!IsEnabled)
         {
-            // Lookup-only mode: don't create new nodes, just clear current node.
+            // Lookup-only mode: don't create new nodes. Signal the controller
+            // to try loading a zone that contains this room — but only once we
+            // have both title and exits, so the fingerprint is complete.
             CurrentNode = null;
             CurrentNodeChanged?.Invoke();
+            if (exits.Count > 0)
+                RoomNotFoundInZone?.Invoke();
             return;
         }
         else
@@ -142,14 +174,17 @@ public sealed class AutoMapperEngine
             // New room — create node and assign coordinates
             node = new MapNode
             {
-                Id          = NextNodeId(),
-                Title       = title,
-                Description = description,
+                Id            = NextNodeId(),
+                Title         = title,
+                Description   = description,
+                ServerRoomId  = serverRoomId,
             };
 
             AssignCoordinates(node, prevNode, usedDir);
             _zone.Nodes[node.Id] = node;
             _fingerprintIndex[fingerprint] = node.Id;
+            if (!string.IsNullOrEmpty(serverRoomId))
+                _serverRoomIndex.TryAdd(serverRoomId, node.Id);
             zoneChanged = true;
         }
 
@@ -271,10 +306,13 @@ public sealed class AutoMapperEngine
     private void RebuildIndex()
     {
         _fingerprintIndex.Clear();
+        _serverRoomIndex.Clear();
         foreach (var node in _zone.Nodes.Values)
         {
             var fp = MapFingerprint.Compute(node.Title, node.Exits);
             _fingerprintIndex.TryAdd(fp, node.Id);
+            if (!string.IsNullOrEmpty(node.ServerRoomId))
+                _serverRoomIndex.TryAdd(node.ServerRoomId, node.Id);
         }
     }
 }

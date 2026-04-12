@@ -1,5 +1,7 @@
 namespace Genie4.Core.Scripting;
 
+public enum PauseMode { None, Pause, Wait, Delay }
+
 public sealed record ScriptLine(int LineNumber, string Origin, string Raw, string Trimmed, int Indent);
 
 public sealed class ScriptInstance
@@ -17,9 +19,19 @@ public sealed class ScriptInstance
     public int  Pc;
     public bool Running = true;
 
+    /// <summary>Debug verbosity: 0=off, 1=goto/gosub/return, 2=+pause/wait,
+    /// 3=+if, 4=+var/math, 5=+actions, 10=all rows.</summary>
+    public int  DebugLevel;
+
     // Pause / sleep state
-    public bool     Paused;
-    public DateTime PauseUntil = DateTime.MinValue;
+    // PauseMode distinguishes the three blocking commands:
+    //   None  — not paused
+    //   Pause — blocks for duration AND until roundtime resolves (whichever is last)
+    //   Wait  — blocks until next game prompt AND until roundtime resolves
+    //   Delay — blocks for duration only (ignores roundtime and prompts)
+    public PauseMode PauseMode;
+    public bool      Paused;
+    public DateTime  PauseUntil = DateTime.MinValue;
 
     // match / matchwait state
     public bool     InMatchWait;

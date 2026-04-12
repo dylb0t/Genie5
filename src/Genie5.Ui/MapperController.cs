@@ -24,6 +24,31 @@ public sealed class MapperController
     private readonly string            _mapsDir;
     private readonly TypeAheadSession  _typeAhead;
 
+    // ── In-memory zone index (built once at startup) ──────────────────────
+    // Avoids reading 92 JSON files from disk on every zone miss.
+    private sealed class ZoneIndexEntry
+    {
+        public string FilePath = string.Empty;
+        public string ZoneName = string.Empty;
+        // title → list of (description prefix, connected-exit count)
+        public Dictionary<string, List<(string DescPrefix, int ConnectedExits)>> NodesByTitle = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> ServerRoomIds = new(StringComparer.OrdinalIgnoreCase);
+    }
+    private List<ZoneIndexEntry>? _zoneIndex;
+
+    /// <summary>
+    /// Emits a synthetic game line that flows through the script engine's
+    /// match/waitfor pipeline, just like server text. Set by MainWindow
+    /// after construction.
+    /// </summary>
+    public Action<string>? EmitGameLine { get; set; }
+
+    /// <summary>
+    /// Launches a script by name with arguments, e.g. ("crossingtrainerfix", ["go", "haberdashery"]).
+    /// Set by MainWindow after construction.
+    /// </summary>
+    public Action<string, IReadOnlyList<string>>? RunScript { get; set; }
+
     public MapperController(
         AutoMapperEngine engine,
         MapZoneRepository repo,
@@ -40,6 +65,79 @@ public sealed class MapperController
         _appendOutput = appendOutput;
         _sendCommand  = sendCommand;
         _typeAhead    = typeAhead;
+
+        // When the engine can't find the current room in the active zone,
+        // scan other imported zones and auto-switch if one contains it.
+        _engine.RoomNotFoundInZone += OnRoomNotFoundInZone;
+
+        BuildZoneIndex();
+    }
+
+    /// <summary>
+    /// Build a lightweight in-memory index of every zone file's node titles,
+    /// descriptions, and server room IDs. Called once at startup so that
+    /// zone-switching is a dictionary lookup, not 92 file reads.
+    /// </summary>
+    public void BuildZoneIndex()
+    {
+        _zoneIndex = new List<ZoneIndexEntry>();
+        if (!Directory.Exists(_mapsDir)) return;
+
+        foreach (var file in Directory.GetFiles(_mapsDir, "*.json"))
+        {
+            var zone = _repo.Load(file);
+            if (zone is null) continue;
+
+            var entry = new ZoneIndexEntry
+            {
+                FilePath = file,
+                ZoneName = zone.Name,
+            };
+
+            foreach (var n in zone.Nodes.Values)
+            {
+                if (!entry.NodesByTitle.TryGetValue(n.Title, out var list))
+                {
+                    list = new List<(string, int)>();
+                    entry.NodesByTitle[n.Title] = list;
+                }
+                var descPrefix = string.IsNullOrEmpty(n.Description)
+                    ? string.Empty
+                    : n.Description[..Math.Min(n.Description.Length, 80)];
+                int connected = n.Exits.Count(e => e.DestinationId.HasValue);
+                list.Add((descPrefix, connected));
+
+                if (!string.IsNullOrEmpty(n.ServerRoomId))
+                    entry.ServerRoomIds.Add(n.ServerRoomId);
+            }
+
+            _zoneIndex.Add(entry);
+        }
+    }
+
+    private bool   _autoLoadingZone;
+    private string _lastAutoLoadTitle = string.Empty;
+    private string _lastAutoLoadDesc  = string.Empty;
+
+    private void OnRoomNotFoundInZone()
+    {
+        // Guard against reentrancy: LoadZone → Recalculate → OnStateChanged
+        // could fire RoomNotFoundInZone again if the newly loaded zone also
+        // doesn't contain the room.
+        if (_autoLoadingZone) return;
+
+        // Don't re-scan disk if we already tried for this exact room.
+        // Reset when the room actually changes (title + description differ).
+        var title = _gameState.RoomTitle;
+        var desc  = _gameState.RoomDescription;
+        if (title == _lastAutoLoadTitle && desc == _lastAutoLoadDesc) return;
+        _lastAutoLoadTitle = title;
+        _lastAutoLoadDesc  = desc;
+
+        DebugLog($"room not in zone, searching index for \"{title}\"");
+        _autoLoadingZone = true;
+        try { TryAutoLoadZoneForCurrentRoom(); }
+        finally { _autoLoadingZone = false; }
     }
 
     // ── Walk state machine ─────────────────────────────────────────────────
@@ -71,6 +169,14 @@ public sealed class MapperController
 
     /// <summary>True while a #goto walk is in progress.</summary>
     public bool IsWalking => _walking;
+
+    /// <summary>When enabled, echoes commands sent, room detection, zone switches, etc.</summary>
+    public bool Debug { get; set; }
+
+    private void DebugLog(string msg)
+    {
+        if (Debug) _appendOutput($"[mapper debug] {msg}");
+    }
 
     /// <summary>
     /// Inspect each line of game text for type-ahead errors. Wire this to the
@@ -124,11 +230,13 @@ public sealed class MapperController
         if (_engine.CurrentNode != null && _walkDestination != null &&
             _engine.CurrentNode.Id == _walkDestination.Id)
         {
-            _appendOutput("[mapper] Arrived.");
+            DebugLog($"arrived at node {_engine.CurrentNode.Id} \"{_engine.CurrentNode.Title}\"");
+            EmitGameLine?.Invoke("YOU HAVE ARRIVED!");
             StopWalk();
             return;
         }
 
+        DebugLog($"prompt: in-flight now {_inFlight}, current node: {_engine.CurrentNode?.Id.ToString() ?? "null"} \"{_engine.CurrentNode?.Title ?? ""}\"");
         Pump();
     }
 
@@ -140,7 +248,29 @@ public sealed class MapperController
             var move = _pathQueue.First!.Value;
             _pathQueue.RemoveFirst();
             _lastSentMove = move;
+
+            // "script <name> [args...]" — launch a .cmd script instead of
+            // sending a raw command to the game server.
+            if (move.StartsWith("script ", StringComparison.OrdinalIgnoreCase))
+            {
+                var scriptParts = move[7..].Trim()
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (scriptParts.Length > 0 && RunScript != null)
+                {
+                    var scriptName = scriptParts[0];
+                    var scriptArgs = scriptParts.Skip(1).ToArray();
+                    DebugLog($"script: \"{scriptName}\" args: [{string.Join(", ", scriptArgs)}] (queued: {_pathQueue.Count})");
+                    // Pause walking — the script will move us; we resume on
+                    // arrival (the next CurrentNodeChanged that matches the
+                    // destination, or when the script signals completion).
+                    _inFlight++;
+                    RunScript(scriptName, scriptArgs);
+                    return; // Don't pump further commands while a script is running
+                }
+            }
+
             _inFlight++;
+            DebugLog($"send: \"{move}\" (in-flight: {_inFlight}/{TypeAheadLimit}, queued: {_pathQueue.Count})");
             _sendCommand(move);
         }
 
@@ -152,7 +282,7 @@ public sealed class MapperController
             if (_engine.CurrentNode != null && _walkDestination != null &&
                 _engine.CurrentNode.Id == _walkDestination.Id)
             {
-                _appendOutput("[mapper] Arrived.");
+                _appendOutput("YOU HAVE ARRIVED!");
                 StopWalk();
             }
             else
@@ -187,13 +317,14 @@ public sealed class MapperController
         if (current is null)
         {
             _appendOutput("[mapper] Lost track of current location while walking. Stopping.");
+            EmitGameLine?.Invoke("MOVEMENT FAILED");
             StopWalk();
             return;
         }
 
         if (current.Id == _walkDestination.Id)
         {
-            _appendOutput("[mapper] Arrived.");
+            EmitGameLine?.Invoke("YOU HAVE ARRIVED!");
             StopWalk();
             return;
         }
@@ -202,6 +333,7 @@ public sealed class MapperController
         if (path is null || path.Count == 0)
         {
             _appendOutput($"[mapper] No path to \"{_walkDestination.Title}\" from current location.");
+            EmitGameLine?.Invoke("MOVEMENT FAILED");
             StopWalk();
             return;
         }
@@ -252,6 +384,21 @@ public sealed class MapperController
             ? Path.Combine(_mapsDir, "default.json")
             : CurrentZonePath;
         _repo.Save(path, _engine.ActiveZone);
+
+        // Update the in-memory index for the saved zone so newly stamped
+        // server room IDs are available for future lookups without a restart.
+        if (_zoneIndex is not null)
+        {
+            var existing = _zoneIndex.Find(e =>
+                string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                existing.ServerRoomIds.Clear();
+                foreach (var n in _engine.ActiveZone.Nodes.Values)
+                    if (!string.IsNullOrEmpty(n.ServerRoomId))
+                        existing.ServerRoomIds.Add(n.ServerRoomId);
+            }
+        }
     }
 
     /// <summary>Import all .xml files in <paramref name="dir"/> as JSON zones.</summary>
@@ -276,6 +423,25 @@ public sealed class MapperController
         var name  = (space < 0 ? trimmed[1..] : trimmed[1..space]).ToLowerInvariant();
         var arg   = space < 0 ? string.Empty : trimmed[(space + 1)..].Trim();
 
+        if (name == "mapper")
+        {
+            if (arg.Equals("debug", StringComparison.OrdinalIgnoreCase))
+            {
+                Debug = !Debug;
+                _appendOutput($"[mapper] Debug {(Debug ? "ON" : "OFF")}");
+                return true;
+            }
+            if (arg.StartsWith("debug ", StringComparison.OrdinalIgnoreCase))
+            {
+                var val = arg[6..].Trim();
+                Debug = val is "1" or "on" or "true";
+                _appendOutput($"[mapper] Debug {(Debug ? "ON" : "OFF")}");
+                return true;
+            }
+            // Other #mapper subcommands (reset, etc.) — no-op for now.
+            return true;
+        }
+
         if (name is not ("goto" or "go" or "g" or "walk" or "walkto")) return false;
 
         if (string.IsNullOrEmpty(arg))
@@ -295,6 +461,7 @@ public sealed class MapperController
         if (target is null)
         {
             _appendOutput($"[mapper] Destination \"{arg}\" not found.");
+            EmitGameLine?.Invoke("DESTINATION NOT FOUND");
             return true;
         }
         if (target.Id == current.Id)
@@ -307,9 +474,11 @@ public sealed class MapperController
         if (path is null || path.Count == 0)
         {
             _appendOutput($"[mapper] No path to \"{target.Title}\".");
+            EmitGameLine?.Invoke("MOVEMENT FAILED");
             return true;
         }
 
+        DebugLog($"path: {string.Join(" → ", path)}");
         _appendOutput($"[mapper] Walking to \"{target.Title}\" ({path.Count} steps).");
         StartWalk(target, path);
         return true;
@@ -334,24 +503,64 @@ public sealed class MapperController
 
     private bool TryAutoLoadZoneForCurrentRoom()
     {
-        var title = _gameState.RoomTitle;
+        var title  = _gameState.RoomTitle;
+        var desc   = _gameState.RoomDescription;
+        var srvId  = _gameState.ServerRoomId;
         if (string.IsNullOrWhiteSpace(title)) return false;
-        if (!Directory.Exists(_mapsDir)) return false;
+        if (_zoneIndex is null || _zoneIndex.Count == 0) return false;
 
-        foreach (var file in Directory.GetFiles(_mapsDir, "*.json"))
+        // Score each candidate using the in-memory index (no disk I/O).
+        //   100  = server room ID match (definitive)
+        //   10+N = title+description match, N = connected exit count
+        //   1+N  = title-only match, N = connected exit count
+        ZoneIndexEntry? bestEntry = null;
+        int bestScore = 0;
+
+        foreach (var entry in _zoneIndex)
         {
-            var zone = _repo.Load(file);
-            if (zone is null) continue;
-            if (!zone.Nodes.Values.Any(n => string.Equals(n.Title, title, StringComparison.OrdinalIgnoreCase)))
-                continue;
+            int score = 0;
 
-            _engine.LoadZone(zone);
-            CurrentZonePath = file;
-            ZoneChanged?.Invoke();
-            _appendOutput($"[mapper] Loaded zone \"{zone.Name}\" containing current room, \"{title}\".");
+            if (!string.IsNullOrEmpty(srvId) && entry.ServerRoomIds.Contains(srvId))
+                score = 100;
+
+            if (score == 0 && entry.NodesByTitle.TryGetValue(title, out var nodes))
+            {
+                foreach (var (descPrefix, connectedExits) in nodes)
+                {
+                    bool descMatch = !string.IsNullOrEmpty(desc) &&
+                                     descPrefix.Length > 0 &&
+                                     desc.StartsWith(descPrefix, StringComparison.OrdinalIgnoreCase);
+                    int s = (descMatch ? 10 : 1) + connectedExits;
+                    if (s > score) score = s;
+                }
+            }
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestEntry = entry;
+                if (score >= 100) break;
+            }
+        }
+
+        if (bestEntry is null) return false;
+
+        // Don't reload the same zone we already have — just recalculate.
+        if (string.Equals(bestEntry.FilePath, CurrentZonePath, StringComparison.OrdinalIgnoreCase))
+        {
+            _engine.Recalculate();
             return _engine.CurrentNode is not null;
         }
-        return false;
+
+        // Only now read the full zone from disk.
+        var zone = _repo.Load(bestEntry.FilePath);
+        if (zone is null) return false;
+
+        _engine.LoadZone(zone);
+        CurrentZonePath = bestEntry.FilePath;
+        ZoneChanged?.Invoke();
+        _appendOutput($"[mapper] Loaded zone \"{zone.Name}\" containing current room, \"{title}\".");
+        return _engine.CurrentNode is not null;
     }
 
     private MapNode? FindTarget(string arg)

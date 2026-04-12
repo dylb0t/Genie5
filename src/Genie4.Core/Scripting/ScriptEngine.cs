@@ -7,10 +7,10 @@ using Genie4.Core.Extensions.Builtin;
 namespace Genie4.Core.Scripting;
 
 /// <summary>
-/// v2 Genie .cmd script runner. Supports:
+///   Genie .cmd script runner. Supports:
 ///   put/send, echo, pause/wait, goto, gosub/return, label (:name | name:),
 ///   match/matchre/matchwait, waitfor/waitforre, var/setvariable, exit,
-///   if &lt;expr&gt; then ... (inline + indented block w/ optional else),
+///   if <expr>; then ... (inline + indented block w/ optional else),
 ///   if_1..if_9, eval, evalmath, include (resolved at parse time).
 ///
 /// All <c>put</c>/<c>send</c> calls flow through the shared
@@ -25,6 +25,27 @@ public sealed class ScriptEngine
     private readonly Action<string>       _echo;
     private readonly Action<string>?      _handleHashCmd;
     private readonly string               _scriptsDir;
+
+    /// <summary>
+    /// Directed echo: (message, windowName, hexColor). When window or color
+    /// are null the host falls back to the main game output / default colour.
+    /// Set after construction by the UI layer.
+    /// </summary>
+    public Action<string, string?, string?>? EchoTo { get; set; }
+
+    /// <summary>
+    /// Returns true when the game character is currently in roundtime.
+    /// Set by the UI layer; used by <c>pause</c> and <c>wait</c> to hold
+    /// until roundtime resolves.
+    /// </summary>
+    public Func<bool>? InRoundtime { get; set; }
+
+    /// <summary>
+    /// Schedule a <see cref="Tick"/> call after the given delay. Set by the
+    /// UI layer (e.g. a DispatcherTimer) so that time-based unblocks (delay,
+    /// pause) don't depend on the next server event arriving.
+    /// </summary>
+    public Action<TimeSpan>? ScheduleTick { get; set; }
 
     private int _inFlight;
 
@@ -185,6 +206,19 @@ public sealed class ScriptEngine
     {
         if (_inFlight > 0) _inFlight--;
         Extensions.DispatchPrompt();
+
+        // Signal 'wait'-paused scripts that a prompt has arrived. The tick
+        // loop will then check roundtime before actually unblocking.
+        for (int i = 0; i < _instances.Count; i++)
+        {
+            var inst = _instances[i];
+            if (inst.Paused && inst.PauseMode == PauseMode.Wait &&
+                inst.PauseUntil == DateTime.MinValue)
+            {
+                inst.PauseUntil = DateTime.UtcNow;
+            }
+        }
+
         // Re-check eval-form actions each prompt so transitions in globals
         // (e.g. preset timers) fire even without a corresponding game line.
         for (int i = 0; i < _instances.Count; i++)
@@ -201,13 +235,30 @@ public sealed class ScriptEngine
             progress = false;
             for (int i = _instances.Count - 1; i >= 0; i--)
             {
+                // The list can shrink during iteration (e.g. an action
+                // calls StopAll/Stop, or a script exits). Re-check bounds.
+                if (i >= _instances.Count) continue;
                 var inst = _instances[i];
                 if (!inst.Running) { _instances.RemoveAt(i); continue; }
 
                 if (inst.Paused)
                 {
-                    if (inst.PauseUntil != DateTime.MinValue && DateTime.UtcNow >= inst.PauseUntil)
-                    { inst.Paused = false; inst.PauseUntil = DateTime.MinValue; }
+                    bool rt = InRoundtime?.Invoke() ?? false;
+                    bool unblock = inst.PauseMode switch
+                    {
+                        // Pause: timer expired AND roundtime resolved
+                        PauseMode.Pause => inst.PauseUntil != DateTime.MinValue
+                                           && DateTime.UtcNow >= inst.PauseUntil && !rt,
+                        // Wait: prompt received (PauseUntil set by OnPrompt) AND roundtime resolved
+                        PauseMode.Wait  => inst.PauseUntil != DateTime.MinValue
+                                           && DateTime.UtcNow >= inst.PauseUntil && !rt,
+                        // Delay: timer expired only (ignores roundtime)
+                        PauseMode.Delay => inst.PauseUntil != DateTime.MinValue
+                                           && DateTime.UtcNow >= inst.PauseUntil,
+                        _ => false,
+                    };
+                    if (unblock)
+                    { inst.Paused = false; inst.PauseMode = PauseMode.None; inst.PauseUntil = DateTime.MinValue; }
                     else continue;
                 }
 
@@ -271,6 +322,7 @@ public sealed class ScriptEngine
                 fire = TryMatch(line, act.Pattern, act.IsRegex, inst, capture: true);
             }
             if (!fire) continue;
+            DbgEcho(inst, 5, $"action fired: \"{act.Command}\" (pattern: \"{act.Pattern}\")");
             var sub = SubstituteVars(act.Command, inst);
             try { Dispatch(sub, inst, 0, -1); }
             catch (Exception ex)
@@ -322,6 +374,10 @@ public sealed class ScriptEngine
         if (t == "{" || t == "}") return true;
 
         var substituted = SubstituteVars(t, inst);
+
+        // Level 10: trace every executed line
+        DbgEcho(inst, 10, $"{inst.Name}:{line.LineNumber} {substituted}");
+
         return Dispatch(substituted, inst, line.LineNumber, currentIdx);
     }
 
@@ -337,6 +393,7 @@ public sealed class ScriptEngine
         {
             var key = lower[3..];
             bool present = inst.Vars.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v);
+            DbgEcho(inst, 3, $"if_{key} (%%{key}=\"{v ?? ""}\") = {present}");
             return HandleConditional(present, rest, inst, lineNo, currentIdx);
         }
 
@@ -353,6 +410,7 @@ public sealed class ScriptEngine
                 var condText  = rest[..thenIdx].Trim();
                 var afterThen = rest[(thenIdx + 4)..].Trim();
                 bool cond = EvalConditionSafe(condText, inst);
+                DbgEcho(inst, 3, $"if ({condText}) = {cond}");
                 return HandleConditional(cond, afterThen, inst, lineNo, currentIdx);
             }
 
@@ -406,21 +464,54 @@ public sealed class ScriptEngine
                 return true;
 
             case "pause":
-            case "wait":
-            case "delay":
             {
+                // pause [N] — block for N seconds (default 1) AND until
+                // roundtime resolves, whichever finishes last.
                 double secs = 1.0;
                 if (!string.IsNullOrWhiteSpace(rest) &&
                     double.TryParse(rest.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var p))
                     secs = p;
                 inst.Paused     = true;
+                inst.PauseMode  = PauseMode.Pause;
                 inst.PauseUntil = DateTime.UtcNow.AddSeconds(secs);
+                ScheduleTick?.Invoke(TimeSpan.FromSeconds(secs + 0.05));
+                DbgEcho(inst, 2, $"pause {secs}s (+ roundtime)");
+                return false;
+            }
+
+            case "wait":
+            {
+                // wait — block until next game prompt AND until roundtime
+                // resolves. No timer component.
+                inst.Paused     = true;
+                inst.PauseMode  = PauseMode.Wait;
+                inst.PauseUntil = DateTime.MinValue; // no timer — prompt-driven
+                DbgEcho(inst, 2, "wait (prompt + roundtime)");
+                return false;
+            }
+
+            case "delay":
+            {
+                // delay [N] — block for N seconds (default 1). Ignores
+                // roundtime and game prompts entirely.
+                double secs = 1.0;
+                if (!string.IsNullOrWhiteSpace(rest) &&
+                    double.TryParse(rest.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var p))
+                    secs = p;
+                inst.Paused     = true;
+                inst.PauseMode  = PauseMode.Delay;
+                inst.PauseUntil = DateTime.UtcNow.AddSeconds(secs);
+                ScheduleTick?.Invoke(TimeSpan.FromSeconds(secs + 0.05));
+                DbgEcho(inst, 2, $"delay {secs}s (ignoring RT)");
                 return false;
             }
 
             case "goto":
                 if (inst.Labels.TryGetValue(rest.Trim(), out var gi))
+                {
                     inst.Pc = gi + 1;
+                    DbgEcho(inst, 1, $"goto {rest.Trim()} → line {gi + 1}");
+                }
                 else { _echo($"[script] unknown label: {rest}"); inst.Running = false; }
                 return true;
 
@@ -431,6 +522,8 @@ public sealed class ScriptEngine
                 { _echo($"[script] unknown label: {label}"); inst.Running = false; return false; }
                 inst.GosubStack.Push(inst.Pc);
                 inst.Pc = ss + 1;
+                DbgEcho(inst, 1, $"gosub {label.Trim()} → line {ss + 1}" +
+                    (string.IsNullOrEmpty(gosubArgs) ? "" : $" args: {gosubArgs}"));
                 // Gosub arguments: %0/$0 = full arg string, %1/$1..%9/$9 = individual args.
                 // These overwrite the caller's values; Genie4 does the same.
                 if (!string.IsNullOrEmpty(gosubArgs))
@@ -444,7 +537,12 @@ public sealed class ScriptEngine
             }
 
             case "return":
-                if (inst.GosubStack.Count > 0) inst.Pc = inst.GosubStack.Pop();
+                if (inst.GosubStack.Count > 0)
+                {
+                    var retPc = inst.GosubStack.Pop();
+                    DbgEcho(inst, 1, $"return → line {retPc}");
+                    inst.Pc = retPc;
+                }
                 else inst.Running = false;
                 return true;
 
@@ -456,7 +554,10 @@ public sealed class ScriptEngine
             {
                 var (label, pat) = SplitCmd(rest);
                 if (!string.IsNullOrEmpty(label))
+                {
                     inst.PendingMatches.Add((label.Trim(), pat, false));
+                    DbgEcho(inst, 2, $"match {label.Trim()} \"{pat}\"");
+                }
                 return true;
             }
 
@@ -464,7 +565,10 @@ public sealed class ScriptEngine
             {
                 var (label, pat) = SplitCmd(rest);
                 if (!string.IsNullOrEmpty(label))
+                {
                     inst.PendingMatches.Add((label.Trim(), pat, true));
+                    DbgEcho(inst, 2, $"matchre {label.Trim()} \"{pat}\"");
+                }
                 return true;
             }
 
@@ -474,18 +578,22 @@ public sealed class ScriptEngine
                     inst.MatchWaitDeadline = DateTime.UtcNow.AddSeconds(mw);
                 else
                     inst.MatchWaitDeadline = DateTime.MaxValue;
+                DbgEcho(inst, 2, $"matchwait ({inst.PendingMatches.Count} patterns" +
+                    (mw > 0 ? $", timeout {mw}s)" : ")"));
                 return false;
 
             case "waitfor":
                 inst.WaitForPattern  = rest;
                 inst.WaitForIsRegex  = false;
                 inst.WaitForDeadline = DateTime.MaxValue;
+                DbgEcho(inst, 2, $"waitfor \"{rest}\"");
                 return false;
 
             case "waitforre":
                 inst.WaitForPattern  = rest;
                 inst.WaitForIsRegex  = true;
                 inst.WaitForDeadline = DateTime.MaxValue;
+                DbgEcho(inst, 2, $"waitforre \"{rest}\"");
                 return false;
 
             case "waiteval":
@@ -494,12 +602,19 @@ public sealed class ScriptEngine
                 // variable state is re-read on each evaluation.
                 inst.WaitEvalExpr     = rest;
                 inst.WaitEvalDeadline = DateTime.MaxValue;
+                DbgEcho(inst, 2, $"waiteval {rest}");
                 return false;
 
             case "debug":
-                // Genie debug level — not wired, treated as a no-op so scripts
-                // that toggle verbosity don't fail.
+            {
+                var level = rest.Trim();
+                if (int.TryParse(level, NumberStyles.Integer, CultureInfo.InvariantCulture, out var dl))
+                    inst.DebugLevel = dl;
+                else
+                    inst.DebugLevel = 0;
+                _echo($"[script] {inst.Name} debug level set to {inst.DebugLevel}");
                 return true;
+            }
 
             case "shift":
                 // Shifts %1→drop, %2→%1, etc. — for walking command-line args.
@@ -517,11 +632,13 @@ public sealed class ScriptEngine
             {
                 var (vn, vv) = SplitCmd(rest);
                 inst.Vars[vn.Trim()] = vv;
+                DbgEcho(inst, 4, $"var {vn.Trim()} = \"{vv}\"");
                 return true;
             }
 
             case "unvar":
             case "deletevariable":
+                DbgEcho(inst, 4, $"unvar {rest.Trim()}");
                 inst.Vars.Remove(rest.Trim());
                 return true;
 
@@ -586,9 +703,11 @@ public sealed class ScriptEngine
                     "set"      => n,
                     _          => cur,
                 };
-                inst.Vars[vn] = result == Math.Floor(result) && !double.IsInfinity(result)
+                var resultStr = result == Math.Floor(result) && !double.IsInfinity(result)
                     ? ((long)result).ToString(CultureInfo.InvariantCulture)
                     : result.ToString("0.################", CultureInfo.InvariantCulture);
+                inst.Vars[vn] = resultStr;
+                DbgEcho(inst, 4, $"math {vn} {op} {arg.Trim()} → {resultStr}");
                 return true;
             }
 
@@ -617,6 +736,7 @@ public sealed class ScriptEngine
                     // Genie convention: failed eval leaves the var as empty string.
                     inst.Vars[vn.Trim()] = string.Empty;
                 }
+                DbgEcho(inst, 4, $"{lower} {vn.Trim()} = \"{inst.Vars.GetValueOrDefault(vn.Trim(), "")}\" (expr: {expr})");
                 return true;
             }
 
@@ -690,16 +810,23 @@ public sealed class ScriptEngine
             }
             case "#echo":
             {
-                // #echo [>Window] [#RRGGBB] message — strip Window/colour args.
+                // #echo [>Window] [#RRGGBB] message
+                string? window = null;
+                string? color  = null;
                 var msg = rest;
                 while (msg.Length > 0)
                 {
                     var (tok, after) = SplitCmd(msg);
-                    if (tok.Length > 0 && (tok[0] == '>' || tok[0] == '#'))
-                    { msg = after; continue; }
+                    if (tok.Length > 0 && tok[0] == '>')
+                    { window = tok[1..]; msg = after; continue; }
+                    if (tok.Length > 0 && tok[0] == '#' && tok.Length >= 4)
+                    { color = tok; msg = after; continue; }
                     break;
                 }
-                _echo(msg);
+                if ((window != null || color != null) && EchoTo != null)
+                    EchoTo(msg, window, color);
+                else
+                    _echo(msg);
                 return;
             }
             case "#mapper":
@@ -820,6 +947,9 @@ public sealed class ScriptEngine
             IsEval  = isEval,
             Enabled = true,
         });
+        DbgEcho(inst, 5, $"action registered: cmd=\"{cmd}\" " +
+            (isEval ? "when eval" : isRegex ? "whenre" : "when") +
+            $" \"{pattern}\"" + (label.Length > 0 ? $" label=({label})" : ""));
     }
 
     private static bool LabelMatch(ScriptAction a, string label)
@@ -840,6 +970,19 @@ public sealed class ScriptEngine
             return i;
         }
         return -1;
+    }
+
+    // ── Debug helper ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Emit a debug trace line if the script's debug level is at or above
+    /// <paramref name="minLevel"/>. Levels: 1=goto/gosub/return,
+    /// 2=pause/wait, 3=if, 4=var/math, 5=actions, 10=all lines.
+    /// </summary>
+    private void DbgEcho(ScriptInstance inst, int minLevel, string msg)
+    {
+        if (inst.DebugLevel >= minLevel)
+            _echo($"[dbg:{inst.DebugLevel}] {msg}");
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

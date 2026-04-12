@@ -11,6 +11,10 @@ public sealed class MapNode
     public string Notes       { get; set; } = string.Empty;
     public string Color       { get; set; } = string.Empty;
 
+    /// <summary>Server-assigned unique room ID from <c>&lt;nav rm="..."/&gt;</c>.
+    /// Empty for legacy imported nodes; populated when the player visits the room.</summary>
+    public string ServerRoomId { get; set; } = string.Empty;
+
     public List<MapExit> Exits { get; set; } = new();
 
     public MapExit? GetExit(Direction dir)

@@ -105,6 +105,51 @@ public partial class MainWindow
                 // Unknown # commands are silently dropped.
             }));
 
+        // Roundtime check for pause/wait commands.
+        _scripts.InRoundtime = () => _gslGameState.RoundTimeRemaining > 0;
+
+        // Timer-driven tick so delay/pause unblock without waiting for server events.
+        _scripts.ScheduleTick = delay =>
+        {
+            var timer = new Avalonia.Threading.DispatcherTimer { Interval = delay };
+            timer.Tick += (_, _) => { timer.Stop(); _scripts.Tick(); };
+            timer.Start();
+        };
+
+        // Directed echo: route #echo >Window #color messages to the right panel.
+        _scripts.EchoTo = (msg, window, color) =>
+        {
+            GameOutputViewModel? target = null;
+            if (window != null)
+            {
+                if (window.Equals("Log", StringComparison.OrdinalIgnoreCase))
+                    target = _logVm;
+                else
+                    _streamVms.TryGetValue(window, out target);
+            }
+            target ??= _gameOutputVm;
+
+            var line = new RenderLine();
+            line.Spans.Add(new AnsiSpan
+            {
+                Text       = msg,
+                Foreground = color ?? "Default",
+            });
+            target.AppendLine(line);
+        };
+
+        // Wire mapper → script pipeline so synthetic lines like
+        // "YOU HAVE ARRIVED!" flow through match/waitfor.
+        _mapper.EmitGameLine = line =>
+        {
+            AppendOutput(line);
+            _scripts?.OnGameLine(line);
+        };
+        _mapper.RunScript = (name, args) =>
+        {
+            _scripts?.TryStart(name, args);
+        };
+
         // Push mapper state into script globals so scripts can read $zoneid /
         // $roomid / $zonename like Genie4. Refreshed whenever the engine
         // recognises a new room (read-only, no auto-resolve).

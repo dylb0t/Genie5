@@ -393,6 +393,12 @@ public sealed class GslParser
                 break;
 
             case "nav":
+            {
+                var rm = Attr(node, "rm");
+                if (!string.IsNullOrEmpty(rm))
+                    ctx.Events.Add(new NavEvent(rm));
+                break;
+            }
             case "mode":
             case "settingsInfo":
             case "settings":
