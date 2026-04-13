@@ -368,6 +368,7 @@ public partial class MainWindow
         _profiles.Save(ProfilesPath);
         _mapper.SaveActiveZone();
         SaveLayout();
+        SaveClientState();
         CloseAutoLog();
     }
 

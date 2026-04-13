@@ -46,6 +46,17 @@ public sealed class PresetPersistenceModel
     public bool   HighlightLine   { get; set; } = false;
 }
 
+/// <summary>
+/// Persisted UI toggle/checkbox state. Grows as new toggles are added.
+/// Stored in a single <c>clientstate.json</c> file.
+/// </summary>
+public sealed class ClientState
+{
+    public bool AutoLogEnabled   { get; set; }
+    public bool MapperEnabled    { get; set; }
+    public bool MapperDebug      { get; set; }
+}
+
 public sealed class LayoutState
 {
     /// <summary>Avalonia WindowState name: Normal, Maximized, FullScreen.</summary>

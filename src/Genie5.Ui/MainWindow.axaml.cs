@@ -76,8 +76,7 @@ public partial class MainWindow : Window
         var streamTuples = streams.Select((s, i) => (s.id, s.title, streamVmArray[i]));
         AttachWindowSettings(_gameOutputVm, _rawOutputVm, _logVm, streamTuples);
 
-        EnableMapperMenuItem.IsChecked = _mapperEngine.IsEnabled;
-        LoadAutoLogSetting();
+        LoadClientState();
 
         _factory = new GenieDockFactory(_gameOutputVm, _rawOutputVm, streamVmArray, _roomVm);
         var layout = _factory.CreateLayout();
@@ -658,6 +657,7 @@ public partial class MainWindow : Window
     private void OnMenuToggleMapper(object? sender, RoutedEventArgs e)
     {
         _mapperEngine.IsEnabled = EnableMapperMenuItem.IsChecked;
+        SaveClientState();
         AppendOutput($"[mapper] Automapper {(_mapperEngine.IsEnabled ? "enabled" : "disabled")}");
     }
 
@@ -693,15 +693,37 @@ public partial class MainWindow : Window
         });
     }
 
-    // ── Auto-log ────────────────────────────────────────────────────────────
+    // ── Client state (persisted UI toggles) ────────────────────────────────
 
-    private string AutoLogSettingsPath => DataPath("autolog.json");
-    private string AutoLogDir          => DataPath("Logs");
+    private string ClientStatePath => DataPath("clientstate.json");
+    private string AutoLogDir      => DataPath("Logs");
+
+    private void LoadClientState()
+    {
+        var state = _persistence.LoadClientState(ClientStatePath);
+        _autoLogEnabled = state.AutoLogEnabled;
+        AutoLogMenuItem.IsChecked = _autoLogEnabled;
+        _mapperEngine.IsEnabled = state.MapperEnabled;
+        EnableMapperMenuItem.IsChecked = state.MapperEnabled;
+        _mapper.Debug = state.MapperDebug;
+    }
+
+    private void SaveClientState()
+    {
+        _persistence.SaveClientState(ClientStatePath, new Genie4.Core.Persistence.ClientState
+        {
+            AutoLogEnabled = _autoLogEnabled,
+            MapperEnabled  = _mapperEngine.IsEnabled,
+            MapperDebug    = _mapper.Debug,
+        });
+    }
+
+    // ── Auto-log ────────────────────────────────────────────────────────────
 
     private void OnMenuToggleAutoLog(object? sender, RoutedEventArgs e)
     {
         _autoLogEnabled = AutoLogMenuItem.IsChecked;
-        SaveAutoLogSetting();
+        SaveClientState();
 
         if (_autoLogEnabled)
             EnsureAutoLogOpen();
@@ -709,32 +731,6 @@ public partial class MainWindow : Window
             CloseAutoLog();
 
         AppendOutput($"[log] Auto-log {(_autoLogEnabled ? "enabled" : "disabled")}");
-    }
-
-    /// <summary>Load the persisted auto-log toggle and restore the menu check.</summary>
-    private void LoadAutoLogSetting()
-    {
-        try
-        {
-            if (File.Exists(AutoLogSettingsPath))
-            {
-                var json = File.ReadAllText(AutoLogSettingsPath);
-                // Minimal JSON: { "enabled": true }
-                _autoLogEnabled = json.Contains("true", StringComparison.OrdinalIgnoreCase);
-            }
-        }
-        catch { /* ignore corrupt file */ }
-        AutoLogMenuItem.IsChecked = _autoLogEnabled;
-    }
-
-    private void SaveAutoLogSetting()
-    {
-        try
-        {
-            File.WriteAllText(AutoLogSettingsPath,
-                $"{{ \"enabled\": {(_autoLogEnabled ? "true" : "false")} }}");
-        }
-        catch { /* best-effort */ }
     }
 
     /// <summary>

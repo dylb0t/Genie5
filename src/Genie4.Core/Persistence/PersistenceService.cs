@@ -140,4 +140,16 @@ public sealed class PersistenceService
         try { return JsonSerializer.Deserialize<List<WindowSettingsPersistenceModel>>(File.ReadAllText(path)) ?? new(); }
         catch { return new(); }
     }
+
+    // ── Client state ────────────────────────────────────────────────────────
+
+    public void SaveClientState(string path, ClientState state)
+        => File.WriteAllText(path, JsonSerializer.Serialize(state, _options));
+
+    public ClientState LoadClientState(string path)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<ClientState>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
+    }
 }
