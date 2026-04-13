@@ -140,6 +140,7 @@ public partial class MainWindow
 
         // Wire mapper → script pipeline so synthetic lines like
         // "YOU HAVE ARRIVED!" flow through match/waitfor.
+        _mapper.InRoundtime = () => _gslGameState.RoundTimeRemaining > 0;
         _mapper.EmitGameLine = line =>
         {
             AppendOutput(line);
@@ -170,6 +171,22 @@ public partial class MainWindow
                 var (segments, events) = _gslParser.ParseLine(line);
 
                 _gslGameState.Apply(events);
+
+                // Push hand state into script globals so scripts can read
+                // $righthand / $lefthand / $righthandnoun / $lefthandnoun.
+                foreach (var ev in events)
+                {
+                    if (ev is ComponentEvent { Id: "rhand" or "lhand" })
+                    {
+                        var rh = string.IsNullOrEmpty(_gslGameState.RightHand) ? "Empty" : _gslGameState.RightHand;
+                        var lh = string.IsNullOrEmpty(_gslGameState.LeftHand)  ? "Empty" : _gslGameState.LeftHand;
+                        _scripts.Globals["righthand"]     = rh;
+                        _scripts.Globals["lefthand"]      = lh;
+                        _scripts.Globals["righthandnoun"] = ExtractNoun(rh);
+                        _scripts.Globals["lefthandnoun"]  = ExtractNoun(lh);
+                        break; // only need to refresh once per batch
+                    }
+                }
 
                 // Route container/inv events to the inv stream window.
                 foreach (var ev in events)
@@ -351,6 +368,7 @@ public partial class MainWindow
         _profiles.Save(ProfilesPath);
         _mapper.SaveActiveZone();
         SaveLayout();
+        CloseAutoLog();
     }
 
     private sealed class UiHost : ICommandHost
@@ -372,5 +390,16 @@ public partial class MainWindow
 
         public void RunScript(string text)
             => _window.AppendOutput("[script] " + text);
+    }
+
+    /// <summary>
+    /// Extract the last word (noun) from a hand item string.
+    /// "polished steel longsword" → "longsword", "Empty" → "Empty".
+    /// </summary>
+    private static string ExtractNoun(string itemName)
+    {
+        if (string.IsNullOrEmpty(itemName)) return string.Empty;
+        var idx = itemName.LastIndexOf(' ');
+        return idx < 0 ? itemName : itemName[(idx + 1)..];
     }
 }

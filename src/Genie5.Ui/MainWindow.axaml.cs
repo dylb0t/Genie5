@@ -36,6 +36,12 @@ public partial class MainWindow : Window
     private int     _lastPort     = 4000;
     private string? _lastGameCode = "DR";
 
+    // ── Auto-log ────────────────────────────────────────────────────────────
+    private bool          _autoLogEnabled;
+    private StreamWriter? _autoLogWriter;
+    private string        _autoLogProfileName = string.Empty;
+    private string        _autoLogDate        = string.Empty; // yyyy-MM-dd of the open file
+
     public MainWindow()
     {
         InitializeComponent();
@@ -71,6 +77,7 @@ public partial class MainWindow : Window
         AttachWindowSettings(_gameOutputVm, _rawOutputVm, _logVm, streamTuples);
 
         EnableMapperMenuItem.IsChecked = _mapperEngine.IsEnabled;
+        LoadAutoLogSetting();
 
         _factory = new GenieDockFactory(_gameOutputVm, _rawOutputVm, streamVmArray, _roomVm);
         var layout = _factory.CreateLayout();
@@ -169,6 +176,7 @@ public partial class MainWindow : Window
 
         _scrollback.Add(line);
         _gameOutputVm.AppendLine(line);
+        AutoLog(line.PlainText);
     }
 
     // Colours only the characters within the given ranges; everything else keeps
@@ -368,10 +376,16 @@ public partial class MainWindow : Window
         _lastPort     = dialog.ResultPort;
 
         if (dialog.IsSimutronics)
+        {
+            SetAutoLogProfile($"{dialog.ResultCharacter}{dialog.ResultGameCode}");
             await ConnectSgeAsync(dialog.ResultGameCode, dialog.ResultCharacter,
                                   dialog.ResultAccount, dialog.ResultPassword);
+        }
         else
+        {
+            SetAutoLogProfile($"{dialog.ResultHost}_{dialog.ResultPort}");
             await ConnectDirectAsync(dialog.ResultHost, dialog.ResultPort);
+        }
     }
 
     private void OnMenuDisconnect(object? sender, RoutedEventArgs e) => _client.Disconnect();
@@ -379,6 +393,7 @@ public partial class MainWindow : Window
     // Connect using a saved profile
     private async Task ConnectProfileAsync(ConnectionProfile p, string password)
     {
+        SetAutoLogProfile(p.Name);
         if (p.IsSimutronics)
             await ConnectSgeAsync(p.GameCode, p.CharacterName, p.AccountName, password);
         else
@@ -676,5 +691,103 @@ public partial class MainWindow : Window
         {
             UseShellExecute = true
         });
+    }
+
+    // ── Auto-log ────────────────────────────────────────────────────────────
+
+    private string AutoLogSettingsPath => DataPath("autolog.json");
+    private string AutoLogDir          => DataPath("Logs");
+
+    private void OnMenuToggleAutoLog(object? sender, RoutedEventArgs e)
+    {
+        _autoLogEnabled = AutoLogMenuItem.IsChecked;
+        SaveAutoLogSetting();
+
+        if (_autoLogEnabled)
+            EnsureAutoLogOpen();
+        else
+            CloseAutoLog();
+
+        AppendOutput($"[log] Auto-log {(_autoLogEnabled ? "enabled" : "disabled")}");
+    }
+
+    /// <summary>Load the persisted auto-log toggle and restore the menu check.</summary>
+    private void LoadAutoLogSetting()
+    {
+        try
+        {
+            if (File.Exists(AutoLogSettingsPath))
+            {
+                var json = File.ReadAllText(AutoLogSettingsPath);
+                // Minimal JSON: { "enabled": true }
+                _autoLogEnabled = json.Contains("true", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        catch { /* ignore corrupt file */ }
+        AutoLogMenuItem.IsChecked = _autoLogEnabled;
+    }
+
+    private void SaveAutoLogSetting()
+    {
+        try
+        {
+            File.WriteAllText(AutoLogSettingsPath,
+                $"{{ \"enabled\": {(_autoLogEnabled ? "true" : "false")} }}");
+        }
+        catch { /* best-effort */ }
+    }
+
+    /// <summary>
+    /// Set the active profile name for log filenames. Call this when a
+    /// profile connects (before logging starts).
+    /// </summary>
+    private void SetAutoLogProfile(string profileName)
+    {
+        _autoLogProfileName = profileName;
+        if (_autoLogEnabled) EnsureAutoLogOpen();
+    }
+
+    private void EnsureAutoLogOpen()
+    {
+        if (string.IsNullOrEmpty(_autoLogProfileName)) return;
+        var today = DateTime.Now.ToString("yyyy-MM-dd");
+
+        // Already open for the right profile+date?
+        if (_autoLogWriter != null && _autoLogDate == today) return;
+
+        CloseAutoLog();
+
+        Directory.CreateDirectory(AutoLogDir);
+        var path = Path.Combine(AutoLogDir, $"{_autoLogProfileName}_{today}.txt");
+        _autoLogDate = today;
+        try
+        {
+            _autoLogWriter = new StreamWriter(path, append: true) { AutoFlush = true };
+        }
+        catch (Exception ex)
+        {
+            AppendOutput($"[log] Failed to open log file: {ex.Message}");
+        }
+    }
+
+    private void CloseAutoLog()
+    {
+        _autoLogWriter?.Dispose();
+        _autoLogWriter = null;
+        _autoLogDate   = string.Empty;
+    }
+
+    /// <summary>Write a plain-text line to the auto-log if enabled.</summary>
+    private void AutoLog(string plainText)
+    {
+        if (!_autoLogEnabled || _autoLogWriter == null) return;
+
+        // Roll to a new file at midnight.
+        var today = DateTime.Now.ToString("yyyy-MM-dd");
+        if (today != _autoLogDate)
+            EnsureAutoLogOpen();
+
+        try { _autoLogWriter?.WriteLine(plainText); }
+        catch { /* best-effort; don't crash on I/O errors */ }
     }
 }

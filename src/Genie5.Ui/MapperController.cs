@@ -153,8 +153,19 @@ public sealed class MapperController
     private MapNode? _walkDestination;
     private bool     _walking;
     private int      _inFlight;
+    private int      _consecutiveFailures;
+    private int      _lastArrivalNodeId = -1;
     private string?  _lastSentMove;
     private DispatcherTimer? _retryTimer;
+
+    /// <summary>Max consecutive movement failures before the mapper stops and replans.</summary>
+    private const int MaxConsecutiveFailures = 3;
+
+    /// <summary>
+    /// Returns true when the character is in roundtime. Set by the UI layer.
+    /// The mapper will hold off pumping moves until RT resolves.
+    /// </summary>
+    public Func<bool>? InRoundtime { get; set; }
 
     /// <summary>
     /// Maximum number of moves that may be in-flight at once. Auto-calibrated
@@ -185,6 +196,24 @@ public sealed class MapperController
     public void OnGameLine(string line)
     {
         if (string.IsNullOrEmpty(line)) return;
+
+        // Detect movement failures while walking.
+        if (_walking && IsMovementFailure(line))
+        {
+            _consecutiveFailures++;
+            if (_inFlight > 0) _inFlight--;
+            DebugLog($"movement failure ({_consecutiveFailures}/{MaxConsecutiveFailures}): \"{line}\"");
+
+            if (_consecutiveFailures >= MaxConsecutiveFailures)
+            {
+                _appendOutput($"[mapper] {_consecutiveFailures} consecutive movement failures — replanning.");
+                _consecutiveFailures = 0;
+                _pathQueue.Clear();
+                _inFlight = 0;
+                ReplanFromCurrent();
+                return;
+            }
+        }
 
         // Match "Sorry, you may only type ahead N commands."
         var idx = line.IndexOf("you may only type ahead", StringComparison.OrdinalIgnoreCase);
@@ -236,6 +265,13 @@ public sealed class MapperController
             return;
         }
 
+        // Reset failure counter when we actually moved to a different node.
+        if (_engine.CurrentNode != null && _lastArrivalNodeId != _engine.CurrentNode.Id)
+        {
+            _lastArrivalNodeId = _engine.CurrentNode.Id;
+            _consecutiveFailures = 0;
+        }
+
         DebugLog($"prompt: in-flight now {_inFlight}, current node: {_engine.CurrentNode?.Id.ToString() ?? "null"} \"{_engine.CurrentNode?.Title ?? ""}\"");
         Pump();
     }
@@ -243,6 +279,14 @@ public sealed class MapperController
     /// <summary>Send queued moves until we reach the type-ahead limit.</summary>
     private void Pump()
     {
+        // Don't send moves during roundtime — schedule a retry when RT ends.
+        if (InRoundtime?.Invoke() == true)
+        {
+            DebugLog("pump: waiting for roundtime to resolve");
+            ScheduleResume(TimeSpan.FromSeconds(1.0));
+            return;
+        }
+
         while (_walking && _inFlight < TypeAheadLimit && _pathQueue.Count > 0)
         {
             var move = _pathQueue.First!.Value;
@@ -343,12 +387,25 @@ public sealed class MapperController
         Pump();
     }
 
+    private static bool IsMovementFailure(string line)
+    {
+        // Common DR server rejection messages when you can't move.
+        return line.StartsWith("You can't go there", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("You can't do that", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("...wait", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Sorry, you may only", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("You are still stunned", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("You can't manage", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("You are unable to move", StringComparison.OrdinalIgnoreCase);
+    }
+
     private void StopWalk()
     {
-        _walking         = false;
-        _walkDestination = null;
-        _lastSentMove    = null;
-        _inFlight        = 0;
+        _walking              = false;
+        _walkDestination      = null;
+        _lastSentMove         = null;
+        _inFlight             = 0;
+        _consecutiveFailures  = 0;
         _pathQueue.Clear();
         _retryTimer?.Stop();
         _retryTimer = null;
