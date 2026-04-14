@@ -36,6 +36,9 @@ public partial class MainWindow : Window
     private int     _lastPort     = 4000;
     private string? _lastGameCode = "DR";
 
+    // ── Layout mode ─────────────────────────────────────────────────────────
+    private bool _isMdiMode;
+
     // ── Auto-log ────────────────────────────────────────────────────────────
     private bool          _autoLogEnabled;
     private StreamWriter? _autoLogWriter;
@@ -78,7 +81,10 @@ public partial class MainWindow : Window
 
         LoadClientState();
 
+        UpdateLayoutMenuChecks();
+
         _factory = new GenieDockFactory(_gameOutputVm, _rawOutputVm, streamVmArray, _roomVm);
+        _factory.IsMdiMode = _isMdiMode;
         var layout = _factory.CreateLayout();
         _factory.InitLayout(layout);
 
@@ -283,6 +289,41 @@ public partial class MainWindow : Window
         if (dockable is IDock dock)
             foreach (var child in dock.VisibleDockables ?? [])
                 ApplyProportions(child, saved);
+    }
+
+    private void UpdateLayoutMenuChecks()
+    {
+        LayoutTabbedMenuItem.Icon = new Avalonia.Controls.TextBlock
+        {
+            Text = _isMdiMode ? " " : "✓", Foreground = Avalonia.Media.Brushes.White, Width = 14,
+        };
+        LayoutMdiMenuItem.Icon = new Avalonia.Controls.TextBlock
+        {
+            Text = _isMdiMode ? "✓" : " ", Foreground = Avalonia.Media.Brushes.White, Width = 14,
+        };
+    }
+
+    private void SwitchLayoutMode(bool mdi)
+    {
+        if (_isMdiMode == mdi) return;
+        _isMdiMode = mdi;
+
+        UpdateLayoutMenuChecks();
+
+        // Rebuild the dock layout from scratch.
+        _factory.IsMdiMode = mdi;
+        var layout = _factory.CreateLayout();
+        _factory.InitLayout(layout);
+
+        MainDockControl.Layout = layout;
+
+        // Rebuild the Windows menu to point at the new dock containers.
+        _toggleablePanels.Clear();
+        WindowsMenu.Items.Clear();
+        BuildWindowsMenu();
+
+        SaveClientState();
+        AppendOutput($"[layout] Switched to {(mdi ? "MDI" : "Tabbed")} mode");
     }
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)
@@ -531,35 +572,57 @@ public partial class MainWindow : Window
 
     private void BuildWindowsMenu()
     {
-        // Main-output dock panels
-        foreach (var vm in new Dock.Model.Core.IDockable[] { _gameOutputVm, _rawOutputVm, _logVm })
+        if (_isMdiMode)
         {
-            _toggleablePanels.Add((vm, _factory.StreamsDock!.Owner as Dock.Model.Core.IDock ?? _factory.StreamsDock));
-            var item = new MenuItem { Header = ((Dock.Model.Core.IDockable)vm).Title, Tag = vm };
-            item.Click += OnWindowItemClick;
-            WindowsMenu.Items.Add(item);
+            // MDI: all windows live in MdiDock
+            var mdiDock = _factory.MdiDock!;
+            foreach (var vm in new Dock.Model.Core.IDockable[] { _gameOutputVm, _rawOutputVm, _logVm })
+            {
+                _toggleablePanels.Add((vm, mdiDock));
+                var item = new MenuItem { Header = ((Dock.Model.Core.IDockable)vm).Title, Tag = vm };
+                item.Click += OnWindowItemClick;
+                WindowsMenu.Items.Add(item);
+            }
+            WindowsMenu.Items.Add(new Separator());
+            foreach (var vm in _streamVms.Values)
+            {
+                _toggleablePanels.Add((vm, mdiDock));
+                var item = new MenuItem { Header = vm.Title, Tag = vm };
+                item.Click += OnWindowItemClick;
+                WindowsMenu.Items.Add(item);
+            }
+            WindowsMenu.Items.Add(new Separator());
+            _toggleablePanels.Add((_roomVm, mdiDock));
+            var roomItem = new MenuItem { Header = _roomVm.Title, Tag = _roomVm };
+            roomItem.Click += OnWindowItemClick;
+            WindowsMenu.Items.Add(roomItem);
         }
-
-        WindowsMenu.Items.Add(new Separator());
-
-        // Stream panels
-        foreach (var vm in _streamVms.Values)
+        else
         {
-            _toggleablePanels.Add((vm, _factory.StreamsDock!));
-            var item = new MenuItem { Header = vm.Title, Tag = vm };
-            item.Click += OnWindowItemClick;
-            WindowsMenu.Items.Add(item);
-        }
-
-        WindowsMenu.Items.Add(new Separator());
-
-        // Right-panel dockables (Room)
-        foreach (var vm in new Dock.Model.Core.IDockable[] { _roomVm })
-        {
-            _toggleablePanels.Add((vm, vm.Owner as Dock.Model.Core.IDock ?? _factory.StreamsDock!));
-            var item = new MenuItem { Header = vm.Title, Tag = vm };
-            item.Click += OnWindowItemClick;
-            WindowsMenu.Items.Add(item);
+            // Tabbed: panels split across MainOutput, Streams, RoomPanel
+            foreach (var vm in new Dock.Model.Core.IDockable[] { _gameOutputVm, _rawOutputVm, _logVm })
+            {
+                _toggleablePanels.Add((vm, _factory.StreamsDock!.Owner as Dock.Model.Core.IDock ?? _factory.StreamsDock));
+                var item = new MenuItem { Header = ((Dock.Model.Core.IDockable)vm).Title, Tag = vm };
+                item.Click += OnWindowItemClick;
+                WindowsMenu.Items.Add(item);
+            }
+            WindowsMenu.Items.Add(new Separator());
+            foreach (var vm in _streamVms.Values)
+            {
+                _toggleablePanels.Add((vm, _factory.StreamsDock!));
+                var item = new MenuItem { Header = vm.Title, Tag = vm };
+                item.Click += OnWindowItemClick;
+                WindowsMenu.Items.Add(item);
+            }
+            WindowsMenu.Items.Add(new Separator());
+            foreach (var vm in new Dock.Model.Core.IDockable[] { _roomVm })
+            {
+                _toggleablePanels.Add((vm, vm.Owner as Dock.Model.Core.IDock ?? _factory.StreamsDock!));
+                var item = new MenuItem { Header = vm.Title, Tag = vm };
+                item.Click += OnWindowItemClick;
+                WindowsMenu.Items.Add(item);
+            }
         }
     }
 
@@ -593,16 +656,23 @@ public partial class MainWindow : Window
         }
         else
         {
-            // Restore to the correct dock based on which panel this belongs to
             Dock.Model.Core.IDock targetDock;
-            if (vm == _gameOutputVm || vm == _rawOutputVm || vm == _logVm)
-                targetDock = _factory!.Find(d => d.Id == "MainOutput") as Dock.Model.Core.IDock
-                             ?? _factory!.StreamsDock!;
-            else if (vm == _roomVm)
-                targetDock = _factory!.Find(d => d.Id == "RoomPanel") as Dock.Model.Core.IDock
-                             ?? _factory!.StreamsDock!;
+            if (_isMdiMode)
+            {
+                targetDock = _factory!.MdiDock!;
+            }
             else
-                targetDock = _factory!.StreamsDock!;
+            {
+                // Restore to the correct dock based on which panel this belongs to
+                if (vm == _gameOutputVm || vm == _rawOutputVm || vm == _logVm)
+                    targetDock = _factory!.Find(d => d.Id == "MainOutput") as Dock.Model.Core.IDock
+                                 ?? _factory!.StreamsDock!;
+                else if (vm == _roomVm)
+                    targetDock = _factory!.Find(d => d.Id == "RoomPanel") as Dock.Model.Core.IDock
+                                 ?? _factory!.StreamsDock!;
+                else
+                    targetDock = _factory!.StreamsDock!;
+            }
 
             _factory!.AddDockable(targetDock, vm);
             _factory!.SetActiveDockable(vm);
@@ -654,6 +724,22 @@ public partial class MainWindow : Window
             AppendOutput($"[mapper] Imported {count} map(s) to {DataPath("Maps")}");
     }
 
+    private void OnMenuPauseAllScripts(object? sender, RoutedEventArgs e) => _scripts.PauseAll();
+    private void OnMenuResumeAllScripts(object? sender, RoutedEventArgs e) => _scripts.ResumeAll();
+    private void OnMenuAbortAllScripts(object? sender, RoutedEventArgs e) => _scripts.StopAll();
+
+    private async void OnMenuMapperScriptSettings(object? sender, RoutedEventArgs e)
+    {
+        var dialog = new DialogMapperScriptSettings(
+            _mapper.UseScriptForGoto, _mapper.GotoScriptName);
+        var ok = await dialog.ShowDialog<bool>(this);
+        if (!ok) return;
+        _mapper.UseScriptForGoto = dialog.ResultUseScript;
+        _mapper.GotoScriptName   = dialog.ResultScriptName;
+        SaveClientState();
+        AppendOutput($"[mapper] Script mode: {(_mapper.UseScriptForGoto ? $"ON ({_mapper.GotoScriptName})" : "OFF (built-in engine)")}");
+    }
+
     private void OnMenuToggleMapper(object? sender, RoutedEventArgs e)
     {
         _mapperEngine.IsEnabled = EnableMapperMenuItem.IsChecked;
@@ -682,6 +768,9 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnMenuLayoutTabbed(object? sender, RoutedEventArgs e) => SwitchLayoutMode(mdi: false);
+    private void OnMenuLayoutMdi(object? sender, RoutedEventArgs e)    => SwitchLayoutMode(mdi: true);
+
     private void OnMenuExit(object? sender, RoutedEventArgs e) => Close();
 
     private void OnMenuGitHub(object? sender, RoutedEventArgs e)
@@ -706,15 +795,22 @@ public partial class MainWindow : Window
         _mapperEngine.IsEnabled = state.MapperEnabled;
         EnableMapperMenuItem.IsChecked = state.MapperEnabled;
         _mapper.Debug = state.MapperDebug;
+        _mapper.UseScriptForGoto = state.MapperUseScript;
+        _mapper.GotoScriptName   = string.IsNullOrEmpty(state.MapperScriptName)
+            ? "automapper" : state.MapperScriptName;
+        _isMdiMode = string.Equals(state.LayoutMode, "Mdi", StringComparison.OrdinalIgnoreCase);
     }
 
     private void SaveClientState()
     {
         _persistence.SaveClientState(ClientStatePath, new Genie4.Core.Persistence.ClientState
         {
-            AutoLogEnabled = _autoLogEnabled,
-            MapperEnabled  = _mapperEngine.IsEnabled,
-            MapperDebug    = _mapper.Debug,
+            AutoLogEnabled   = _autoLogEnabled,
+            MapperEnabled    = _mapperEngine.IsEnabled,
+            MapperDebug      = _mapper.Debug,
+            MapperUseScript  = _mapper.UseScriptForGoto,
+            MapperScriptName = _mapper.GotoScriptName,
+            LayoutMode       = _isMdiMode ? "Mdi" : "Tabbed",
         });
     }
 

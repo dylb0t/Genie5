@@ -49,6 +49,12 @@ public sealed class MapperController
     /// </summary>
     public Action<string, IReadOnlyList<string>>? RunScript { get; set; }
 
+    /// <summary>When true, #goto launches a script instead of the built-in walk engine.</summary>
+    public bool UseScriptForGoto { get; set; }
+
+    /// <summary>Script name to run for #goto walks (default "automapper").</summary>
+    public string GotoScriptName { get; set; } = "automapper";
+
     public MapperController(
         AutoMapperEngine engine,
         MapZoneRepository repo,
@@ -155,17 +161,18 @@ public sealed class MapperController
     private int      _inFlight;
     private int      _consecutiveFailures;
     private int      _lastArrivalNodeId = -1;
-    private string?  _lastSentMove;
+    private bool     _replanOnDrain;     // replan once all in-flight commands have drained
+
     private DispatcherTimer? _retryTimer;
 
     /// <summary>Max consecutive movement failures before the mapper stops and replans.</summary>
     private const int MaxConsecutiveFailures = 3;
 
     /// <summary>
-    /// Returns true when the character is in roundtime. Set by the UI layer.
-    /// The mapper will hold off pumping moves until RT resolves.
+    /// Returns the remaining roundtime in seconds (0 = not in RT). Set by the
+    /// UI layer. The mapper holds off pumping moves until RT resolves.
     /// </summary>
-    public Func<bool>? InRoundtime { get; set; }
+    public Func<int>? RoundTimeRemaining { get; set; }
 
     /// <summary>
     /// Maximum number of moves that may be in-flight at once. Auto-calibrated
@@ -235,16 +242,13 @@ public sealed class MapperController
 
         if (!_walking) return;
 
-        // Requeue the command that was just rejected (server didn't run it)
-        if (_lastSentMove != null)
-            _pathQueue.AddFirst(_lastSentMove);
-
-        // Reset in-flight to the new limit (the server has accepted that many
-        // already; the rejection means we tried to send one more).
-        _inFlight = TypeAheadLimit;
-        _lastSentMove = null;
-
-        ScheduleResume(TimeSpan.FromSeconds(1.0));
+        // The server rejected commands beyond the type-ahead cap. We don't
+        // know exactly which queued moves the server accepted vs. silently
+        // dropped, so the safest recovery is to let all in-flight commands
+        // settle and then replan from wherever we end up.
+        DebugLog("type-ahead rejection — will replan once in-flight commands drain");
+        _pathQueue.Clear();
+        _replanOnDrain = true;
     }
 
     /// <summary>
@@ -273,17 +277,29 @@ public sealed class MapperController
         }
 
         DebugLog($"prompt: in-flight now {_inFlight}, current node: {_engine.CurrentNode?.Id.ToString() ?? "null"} \"{_engine.CurrentNode?.Title ?? ""}\"");
+
+        // After a type-ahead rejection we wait for all in-flight to drain,
+        // then replan from wherever we ended up.
+        if (_replanOnDrain && _inFlight == 0)
+        {
+            _replanOnDrain = false;
+            DebugLog("in-flight drained — replanning from current room");
+            ReplanFromCurrent();
+            return;
+        }
+
         Pump();
     }
 
     /// <summary>Send queued moves until we reach the type-ahead limit.</summary>
     private void Pump()
     {
-        // Don't send moves during roundtime — schedule a retry when RT ends.
-        if (InRoundtime?.Invoke() == true)
+        // Don't send moves during roundtime — wait the exact remaining seconds.
+        var rtSecs = RoundTimeRemaining?.Invoke() ?? 0;
+        if (rtSecs > 0)
         {
-            DebugLog("pump: waiting for roundtime to resolve");
-            ScheduleResume(TimeSpan.FromSeconds(1.0));
+            DebugLog($"pump: waiting {rtSecs}s for roundtime to resolve");
+            ScheduleResume(TimeSpan.FromSeconds(rtSecs + 0.2));
             return;
         }
 
@@ -291,7 +307,7 @@ public sealed class MapperController
         {
             var move = _pathQueue.First!.Value;
             _pathQueue.RemoveFirst();
-            _lastSentMove = move;
+
 
             // "script <name> [args...]" — launch a .cmd script instead of
             // sending a raw command to the game server.
@@ -399,13 +415,43 @@ public sealed class MapperController
             || line.StartsWith("You are unable to move", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Called when the automapper script finishes. Checks if we arrived at
+    /// the destination or need to signal failure.
+    /// </summary>
+    public void OnAutoMapperScriptFinished()
+    {
+        if (!_walking) return;
+
+        if (_engine.CurrentNode != null && _walkDestination != null &&
+            _engine.CurrentNode.Id == _walkDestination.Id)
+        {
+            DebugLog($"automapper script finished — arrived at node {_engine.CurrentNode.Id}");
+            EmitGameLine?.Invoke("YOU HAVE ARRIVED!");
+            StopWalk();
+        }
+        else
+        {
+            DebugLog("automapper script finished — not at destination, replanning");
+            ReplanFromCurrent();
+        }
+    }
+
+    public void CancelWalk()
+    {
+        if (!_walking) return;
+        _appendOutput("[mapper] Walk cancelled.");
+        EmitGameLine?.Invoke("MOVEMENT FAILED");
+        StopWalk();
+    }
+
     private void StopWalk()
     {
         _walking              = false;
         _walkDestination      = null;
-        _lastSentMove         = null;
         _inFlight             = 0;
         _consecutiveFailures  = 0;
+        _replanOnDrain        = false;
         _pathQueue.Clear();
         _retryTimer?.Stop();
         _retryTimer = null;
@@ -417,6 +463,18 @@ public sealed class MapperController
         _walkDestination = destination;
         _walking         = true;
         _inFlight        = 0;
+
+        // Script mode: launch the configured script with the calculated moves.
+        if (UseScriptForGoto && RunScript != null)
+        {
+            var args = path.ToArray();
+            _appendOutput($"[mapper] Launching {GotoScriptName} with {args.Length} moves: {string.Join(" ", args.Take(10))}{(args.Length > 10 ? "..." : "")}");
+            DebugLog($"launching {GotoScriptName} script with {args.Length} moves");
+            RunScript(GotoScriptName, args);
+            return;
+        }
+
+        // Built-in walk engine
         foreach (var move in path) _pathQueue.AddLast(move);
         Pump();
     }

@@ -105,6 +105,19 @@ public partial class MainWindow
                 // Unknown # commands are silently dropped.
             }));
 
+        // Echo commands sent by scripts to the game window using the scriptecho preset.
+        _scripts.EchoCommand = (scriptName, cmd) =>
+        {
+            var line = new RenderLine();
+            line.Spans.Add(new AnsiSpan
+            {
+                Text       = $"[{scriptName}]: {cmd}",
+                Foreground = _presets.GetForeground("scriptecho"),
+                Background = _presets.GetBackground("scriptecho"),
+            });
+            ApplyHighlightAndAppend(line);
+        };
+
         // Roundtime check for pause/wait commands.
         _scripts.InRoundtime = () => _gslGameState.RoundTimeRemaining > 0;
 
@@ -140,7 +153,7 @@ public partial class MainWindow
 
         // Wire mapper → script pipeline so synthetic lines like
         // "YOU HAVE ARRIVED!" flow through match/waitfor.
-        _mapper.InRoundtime = () => _gslGameState.RoundTimeRemaining > 0;
+        _mapper.RoundTimeRemaining = () => _gslGameState.RoundTimeRemaining;
         _mapper.EmitGameLine = line =>
         {
             AppendOutput(line);
@@ -150,6 +163,15 @@ public partial class MainWindow
         {
             _scripts?.TryStart(name, args);
         };
+
+        // When the automapper script finishes, check if we arrived or need to replan.
+        _scripts.ScriptFinished += name =>
+        {
+            if (!name.Equals("automapper", StringComparison.OrdinalIgnoreCase)) return;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => _mapper.OnAutoMapperScriptFinished());
+        };
+
+        ScriptBar.Attach(_scripts, _mapper);
 
         // Push mapper state into script globals so scripts can read $zoneid /
         // $roomid / $zonename like Genie4. Refreshed whenever the engine

@@ -49,6 +49,10 @@ public sealed class ScriptInstance
 
     public bool IsBlocked => Paused || InMatchWait || WaitForPattern != null || WaitEvalExpr != null;
 
+    /// <summary>User-initiated pause from the script bar. While true the
+    /// tick loop skips this instance entirely.</summary>
+    public bool UserPaused;
+
     // action triggers — persistent, fire whenever a matching line arrives
     public List<ScriptAction> Actions = new();
     public bool ActionsEnabled = true;

@@ -52,9 +52,16 @@ public sealed class PresetPersistenceModel
 /// </summary>
 public sealed class ClientState
 {
-    public bool AutoLogEnabled   { get; set; }
-    public bool MapperEnabled    { get; set; }
-    public bool MapperDebug      { get; set; }
+    public bool   AutoLogEnabled       { get; set; }
+    public bool   MapperEnabled        { get; set; }
+    public bool   MapperDebug          { get; set; }
+    /// <summary>When true, #goto launches automapper.cmd script instead of
+    /// the built-in mapper walk engine.</summary>
+    public bool   MapperUseScript      { get; set; }
+    /// <summary>Script name to run for #goto walks (default: "automapper").</summary>
+    public string MapperScriptName     { get; set; } = "automapper";
+    /// <summary>"Tabbed" or "Mdi". Controls how output windows are displayed.</summary>
+    public string LayoutMode           { get; set; } = "Tabbed";
 }
 
 public sealed class LayoutState

@@ -84,6 +84,7 @@ TcpGameClient.LineReceived
 - [ ] Profile management is buggy (save/load edge cases)
 - [x] Double echo on sent commands
 - [ ] Moving windows from one panel from another leaves tab in another window
+- [ ] Mapper window unreadable, scrolling and zooming do not appear to be ergo
 
 ### Planned features
 - [ ] Per-body-part wound tracking — `BodyView` currently shows global bleeding only; GSL wound data exists per zone
@@ -98,5 +99,8 @@ TcpGameClient.LineReceived
 - [ ] Ability to run both genie scripts and lich scripts
 - [ ] Select to copy (setable)
 - [ ] Sound support
+- [ ] Remote control configuable button panel
+- [ ] Ability to choose between MDI and Tabbed windows
+- [ ] Global variables section
 
 

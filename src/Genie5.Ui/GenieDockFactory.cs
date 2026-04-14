@@ -17,6 +17,9 @@ public sealed class GenieDockFactory : Factory
 
     private IRootDock?   _rootDock;
     public  DocumentDock? StreamsDock { get; private set; }
+    public  DocumentDock? MdiDock     { get; private set; }
+
+    public bool IsMdiMode { get; set; }
 
     public GenieDockFactory(GameOutputViewModel mainVm,
                             GameOutputViewModel rawVm,
@@ -31,6 +34,13 @@ public sealed class GenieDockFactory : Factory
 
     public override IRootDock CreateLayout()
     {
+        return IsMdiMode ? CreateMdiLayout() : CreateTabbedLayout();
+    }
+
+    private IRootDock CreateTabbedLayout()
+    {
+        MdiDock = null;
+
         // Centre-left: main game output (top) + streams tabs (bottom)
         var mainDock = new DocumentDock
         {
@@ -112,6 +122,55 @@ public sealed class GenieDockFactory : Factory
         _rootDock             = root;
 
         return root;
+    }
+
+    private IRootDock CreateMdiLayout()
+    {
+        StreamsDock = null;
+
+        // Single DocumentDock in MDI mode containing all windows.
+        var allDockables = new List<IDockable> { _mainVm, _rawVm };
+        foreach (var vm in _streamVms)
+            allDockables.Add(vm);
+        allDockables.Add(_roomVm);
+
+        MdiDock = new DocumentDock
+        {
+            Id                = "MdiDock",
+            Title             = "MDI",
+            IsCollapsable     = false,
+            CanCreateDocument = false,
+            LayoutMode        = DocumentLayoutMode.Mdi,
+            VisibleDockables  = allDockables,
+            ActiveDockable    = _mainVm,
+        };
+
+        var rootLayout = new ProportionalDock
+        {
+            Id               = "RootLayout",
+            Orientation      = Orientation.Horizontal,
+            IsCollapsable    = false,
+            VisibleDockables = CreateList<IDockable>(MdiDock)
+        };
+
+        var root = CreateRootDock();
+        root.Id               = "Root";
+        root.IsCollapsable    = false;
+        root.VisibleDockables = CreateList<IDockable>(rootLayout);
+        root.DefaultDockable  = rootLayout;
+        root.ActiveDockable   = rootLayout;
+        _rootDock             = root;
+
+        return root;
+    }
+
+    /// <summary>
+    /// Override close to just hide the dockable (remove from its parent)
+    /// instead of destroying it.  The Windows menu can re-add it later.
+    /// </summary>
+    public override void CloseDockable(IDockable dockable)
+    {
+        RemoveDockable(dockable, collapse: false);
     }
 
     public override void InitLayout(IDockable layout)

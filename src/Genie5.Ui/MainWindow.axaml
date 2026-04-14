@@ -38,6 +38,11 @@
       </MenuItem>
 
       <MenuItem Header="_Layout">
+        <MenuItem Header="_Tabbed"                 Name="LayoutTabbedMenuItem"
+                  Click="OnMenuLayoutTabbed" />
+        <MenuItem Header="_MDI"                    Name="LayoutMdiMenuItem"
+                  Click="OnMenuLayoutMdi" />
+        <Separator />
         <MenuItem Header="_Load Layout..."         Click="OnMenuLoadLayout" />
         <MenuItem Header="Save Layout _As..."      Click="OnMenuSaveLayoutAs" />
         <Separator />
@@ -49,9 +54,9 @@
       <MenuItem Header="_Script">
         <MenuItem Header="Script _Explorer..."     IsEnabled="False" />
         <Separator />
-        <MenuItem Header="_Pause All Scripts"      IsEnabled="False" />
-        <MenuItem Header="_Resume All Scripts"     IsEnabled="False" />
-        <MenuItem Header="_Abort All Scripts"      IsEnabled="False" />
+        <MenuItem Header="_Pause All Scripts"      Click="OnMenuPauseAllScripts" />
+        <MenuItem Header="_Resume All Scripts"     Click="OnMenuResumeAllScripts" />
+        <MenuItem Header="_Abort All Scripts"      Click="OnMenuAbortAllScripts" />
       </MenuItem>
 
       <MenuItem Header="_AutoMapper">
@@ -60,6 +65,8 @@
         <Separator />
         <MenuItem Header="_Enable Automapper"      Name="EnableMapperMenuItem"
                   ToggleType="CheckBox"            Click="OnMenuToggleMapper" />
+        <Separator />
+        <MenuItem Header="_Script Settings..."     Click="OnMenuMapperScriptSettings" />
       </MenuItem>
 
       <MenuItem Header="_Plugins">
@@ -75,6 +82,9 @@
       </MenuItem>
 
     </Menu>
+
+    <!-- Script / mapper activity bar -->
+    <local:ScriptBarView Name="ScriptBar" DockPanel.Dock="Top" />
 
     <!-- Status bar (vitals, roundtime, indicators) -->
     <local:StatusBarView Name="StatusBar" DockPanel.Dock="Bottom"/>

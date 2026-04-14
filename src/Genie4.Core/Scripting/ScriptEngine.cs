@@ -34,6 +34,12 @@ public sealed class ScriptEngine
     public Action<string, string?, string?>? EchoTo { get; set; }
 
     /// <summary>
+    /// Echoes a command sent by a script to the game window. Args: (scriptName, command).
+    /// Set by the UI layer to render with the "scriptecho" preset colour.
+    /// </summary>
+    public Action<string, string>? EchoCommand { get; set; }
+
+    /// <summary>
     /// Returns true when the game character is currently in roundtime.
     /// Set by the UI layer; used by <c>pause</c> and <c>wait</c> to hold
     /// until roundtime resolves.
@@ -95,6 +101,9 @@ public sealed class ScriptEngine
     public IReadOnlyList<ScriptInstance> Instances => _instances;
     public bool AnyRunning => _instances.Any(i => i.Running);
 
+    /// <summary>Fired when a script finishes (done or stopped). Arg is the script name.</summary>
+    public event Action<string>? ScriptFinished;
+
     public bool TryStart(string name, IReadOnlyList<string> args)
     {
         var path = ResolveScriptPath(name);
@@ -139,9 +148,11 @@ public sealed class ScriptEngine
     public void StopAll()
     {
         if (_instances.Count == 0) return;
+        var names = _instances.Select(i => i.Name).ToList();
         foreach (var i in _instances) i.Running = false;
         _instances.Clear();
         _echo("[script] all scripts stopped");
+        foreach (var n in names) ScriptFinished?.Invoke(n);
     }
 
     public void Stop(string name)
@@ -152,7 +163,35 @@ public sealed class ScriptEngine
             _instances[i].Running = false;
             _instances.RemoveAt(i);
             _echo($"[script] {name} stopped");
+            ScriptFinished?.Invoke(name);
         }
+    }
+
+    public void PauseScript(string name)
+    {
+        foreach (var inst in _instances)
+            if (inst.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            { inst.UserPaused = true; _echo($"[script] {name} paused"); }
+    }
+
+    public void ResumeScript(string name)
+    {
+        foreach (var inst in _instances)
+            if (inst.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            { inst.UserPaused = false; _echo($"[script] {name} resumed"); }
+    }
+
+    public void PauseAll()
+    {
+        foreach (var inst in _instances) inst.UserPaused = true;
+        _echo("[script] all scripts paused");
+    }
+
+    public void ResumeAll()
+    {
+        foreach (var inst in _instances) inst.UserPaused = false;
+        _echo("[script] all scripts resumed");
+        Tick();
     }
 
     public void OnGameLine(string line)
@@ -240,6 +279,7 @@ public sealed class ScriptEngine
                 if (i >= _instances.Count) continue;
                 var inst = _instances[i];
                 if (!inst.Running) { _instances.RemoveAt(i); continue; }
+                if (inst.UserPaused) continue;
 
                 if (inst.Paused)
                 {
@@ -348,6 +388,7 @@ public sealed class ScriptEngine
                 else
                 {
                     _inFlight++;
+                    EchoCommand?.Invoke(inst.Name, next);
                     Extensions.DispatchCommand(next);
                     _sendCommand(next);
                 }
@@ -359,6 +400,7 @@ public sealed class ScriptEngine
         {
             inst.Running = false;
             _echo($"[script] {inst.Name} done");
+            ScriptFinished?.Invoke(inst.Name);
             return false;
         }
 
@@ -453,6 +495,7 @@ public sealed class ScriptEngine
                 else
                 {
                     _inFlight++;
+                    EchoCommand?.Invoke(inst.Name, first);
                     Extensions.DispatchCommand(first);
                     _sendCommand(first);
                 }
@@ -548,6 +591,7 @@ public sealed class ScriptEngine
 
             case "exit":
                 inst.Running = false;
+                ScriptFinished?.Invoke(inst.Name);
                 return false;
 
             case "match":
@@ -829,6 +873,10 @@ public sealed class ScriptEngine
                     _echo(msg);
                 return;
             }
+            //case "#goto":
+                    //Extensions.DispatchCommand(rest);
+                    //_sendCommand(rest);
+                //return;
             case "#mapper":
                 // No-op for now; mapper reset is informational only.
                 return;
