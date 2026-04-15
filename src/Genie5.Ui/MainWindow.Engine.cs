@@ -46,6 +46,80 @@ public partial class MainWindow
     private string DataPath(string file)
         => Path.Combine(_dirService.Current.BasePath, file);
 
+    /// <summary>
+    /// Path for JSON config files. All application configuration lives under
+    /// <c>BasePath/Config</c> to keep the app support root tidy (Maps, Scripts,
+    /// Logs and the Config dir sit side-by-side). The directory is created on
+    /// first access.
+    /// </summary>
+    internal string ConfigPath(string file)
+    {
+        var dir = Path.Combine(_dirService.Current.BasePath, "Config");
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, file);
+    }
+
+    internal string ConfigDir
+    {
+        get
+        {
+            var dir = Path.Combine(_dirService.Current.BasePath, "Config");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+    }
+
+    /// <summary>
+    /// One-time migration: if any known *.json config file still lives at the
+    /// old location (BasePath root), move it into BasePath/Config. Safe to run
+    /// on every launch — no-op once the move has happened.
+    /// </summary>
+    // private void MigrateConfigFiles()
+    // {
+    //     var baseDir   = _dirService.Current.BasePath;
+    //     var configDir = ConfigDir;
+
+    //     // Fixed-name files we have always written.
+    //     var names = new[]
+    //     {
+    //         "aliases.json",
+    //         "autolog.json",
+    //         "clientstate.json",
+    //         "highlights.json",
+    //         "layout.json",
+    //         "presets.json",
+    //         "profiles.json",
+    //         "triggers.json",
+    //         "window_settings.json",
+    //     };
+    //     foreach (var name in names)
+    //         TryMove(Path.Combine(baseDir, name), Path.Combine(configDir, name));
+
+    //     // Per-profile layouts: layout_<profile>.json
+    //     try
+    //     {
+    //         foreach (var path in Directory.EnumerateFiles(baseDir, "layout_*.json",
+    //                                                       SearchOption.TopDirectoryOnly))
+    //         {
+    //             var name = Path.GetFileName(path);
+    //             TryMove(path, Path.Combine(configDir, name));
+    //         }
+    //     }
+    //     catch { /* ignore enumeration errors */ }
+
+    //     static void TryMove(string src, string dst)
+    //     {
+    //         if (!File.Exists(src)) return;
+    //         if (File.Exists(dst))
+    //         {
+    //             // Destination wins — leave source in place so the user can
+    //             // reconcile by hand rather than silently losing data.
+    //             return;
+    //         }
+    //         try { File.Move(src, dst); } catch { /* ignore — best effort */ }
+    //     }
+    // }
+
     private void InitializeEngines()
     {
         var baseDir = Path.Combine(
@@ -54,6 +128,10 @@ public partial class MainWindow
         Directory.CreateDirectory(baseDir);
 
         _dirService = new LocalDirectoryService("Genie5", baseDir);
+
+        // Move any stale JSON files from the base directory into Config/.
+        // One-shot — no-op once everything has been relocated.
+        //MigrateConfigFiles();
 
         var config = new GenieConfig(_dirService);
         var queue  = new CommandQueue();
@@ -287,7 +365,7 @@ public partial class MainWindow
             Avalonia.Threading.Dispatcher.UIThread.Post(() => AppendOutput("[disconnected]"));
     }
 
-    internal string ProfilesPath => DataPath("profiles.json");
+    internal string ProfilesPath => ConfigPath("profiles.json");
 
     /// <summary>
     /// Mirror the mapper's view of the current room into script globals.
@@ -333,7 +411,7 @@ public partial class MainWindow
             vm.Settings = _windowSettings.Register(id, title);
 
         // Apply persisted overrides
-        foreach (var m in _persistence.LoadWindowSettings(DataPath("window_settings.json")))
+        foreach (var m in _persistence.LoadWindowSettings(ConfigPath("window_settings.json")))
             _windowSettings.Apply(m);
 
         // Push loaded titles back to document titles so tab headers update
@@ -351,13 +429,13 @@ public partial class MainWindow
     internal void LoadData()
     {
         _profiles.Load(ProfilesPath);
-        foreach (var m in _persistence.LoadAliases(DataPath("aliases.json")))
+        foreach (var m in _persistence.LoadAliases(ConfigPath("aliases.json")))
             _aliases.AddAlias(m.Name, m.Expansion, m.IsEnabled);
 
-        foreach (var m in _persistence.LoadTriggers(DataPath("triggers.json")))
+        foreach (var m in _persistence.LoadTriggers(ConfigPath("triggers.json")))
             _triggers.AddTrigger(m.Pattern, m.Action, m.CaseSensitive, m.IsEnabled);
 
-        foreach (var m in _persistence.LoadHighlights(DataPath("highlights.json")))
+        foreach (var m in _persistence.LoadHighlights(ConfigPath("highlights.json")))
         {
             HighlightMatchType matchType;
             if (!string.IsNullOrEmpty(m.MatchType) &&
@@ -370,7 +448,7 @@ public partial class MainWindow
                                 matchType, m.CaseSensitive, m.IsEnabled);
         }
 
-        foreach (var m in _persistence.LoadPresets(DataPath("presets.json")))
+        foreach (var m in _persistence.LoadPresets(ConfigPath("presets.json")))
             _presets.Apply(new Genie4.Core.Presets.PresetRule
             {
                 Id              = m.Id,
@@ -382,11 +460,11 @@ public partial class MainWindow
 
     internal void SaveData()
     {
-        _persistence.SaveAliases(DataPath("aliases.json"), _aliases.Aliases);
-        _persistence.SaveTriggers(DataPath("triggers.json"), _triggers.Triggers);
-        _persistence.SaveHighlights(DataPath("highlights.json"), _highlights.Rules);
-        _persistence.SavePresets(DataPath("presets.json"), _presets);
-        _persistence.SaveWindowSettings(DataPath("window_settings.json"), _windowSettings);
+        _persistence.SaveAliases(ConfigPath("aliases.json"), _aliases.Aliases);
+        _persistence.SaveTriggers(ConfigPath("triggers.json"), _triggers.Triggers);
+        _persistence.SaveHighlights(ConfigPath("highlights.json"), _highlights.Rules);
+        _persistence.SavePresets(ConfigPath("presets.json"), _presets);
+        _persistence.SaveWindowSettings(ConfigPath("window_settings.json"), _windowSettings);
         _profiles.Save(ProfilesPath);
         _mapper.SaveActiveZone();
         SaveLayout();

@@ -49,7 +49,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        _gameOutputVm = new GameOutputViewModel();
+        _gameOutputVm = new GameOutputViewModel("GameOutput", "Game Output", canClose: true);
         _rawOutputVm  = new GameOutputViewModel("RawOutput", "Raw",  canClose: true);
         _logVm        = new GameOutputViewModel("Log",       "Log",  canClose: true);
 
@@ -99,7 +99,8 @@ public partial class MainWindow : Window
         InputBox.KeyDown += OnInputKeyDown;
 
         // Restore saved layout (window geometry + dock proportions).
-        var savedLayout = _persistence.LoadLayout(DataPath("layout.json"));
+        // At startup no profile is connected, so this loads the default layout.
+        var savedLayout = _persistence.LoadLayout(DefaultLayoutPath());
         if (savedLayout != null) RestoreLayout(savedLayout);
 
         // Track restore-state geometry whenever the window is in Normal state
@@ -238,12 +239,69 @@ public partial class MainWindow : Window
 
     // ── Layout persistence ────────────────────────────────────────────────────
 
-    private void SaveLayout() => SaveLayoutTo(DataPath("layout.json"));
+    /// <summary>Active profile name (used to pick per-profile layout file).</summary>
+    private string _currentProfileName = string.Empty;
+
+    private string DefaultLayoutPath() => ConfigPath("Layout/layout.json");
+    private string ProfileLayoutPath(string profile) =>
+        ConfigPath($"Layout/{SanitizeFilename(profile)}.json");
+    private string CurrentLayoutPath() =>
+        string.IsNullOrEmpty(_currentProfileName)
+            ? DefaultLayoutPath()
+            : ProfileLayoutPath(_currentProfileName);
+
+    private static string SanitizeFilename(string s)
+    {
+        var invalid = System.IO.Path.GetInvalidFileNameChars();
+        var chars = s.Select(c => invalid.Contains(c) ? '_' : c).ToArray();
+        return new string(chars);
+    }
+
+    /// <summary>Returns every window ViewModel managed by the factory (order matters).</summary>
+    private IEnumerable<Dock.Model.Core.IDockable> AllDockables()
+    {
+        yield return _gameOutputVm;
+        yield return _rawOutputVm;
+        yield return _logVm;
+        foreach (var vm in _streamVms.Values) yield return vm;
+        yield return _roomVm;
+    }
+
+    private void SaveLayout() => SaveLayoutTo(CurrentLayoutPath());
 
     private void SaveLayoutTo(string path)
     {
         var props = new Dictionary<string, double>();
         CollectProportions(MainDockControl.Layout, props);
+
+        var mdiBounds   = new Dictionary<string, MdiWindowBounds>();
+        var hidden      = new List<string>();
+        foreach (var vm in AllDockables())
+        {
+            if (string.IsNullOrEmpty(vm.Id)) continue;
+
+            // MDI bounds (only meaningful when the VM has been laid out in MDI mode).
+            if (vm is Dock.Model.Controls.IMdiDocument mdi)
+            {
+                var r = mdi.MdiBounds;
+                if (r.Width > 0 && r.Height > 0)
+                {
+                    mdiBounds[vm.Id] = new MdiWindowBounds
+                    {
+                        X      = r.X,
+                        Y      = r.Y,
+                        Width  = r.Width,
+                        Height = r.Height,
+                        State  = mdi.MdiState.ToString(),
+                    };
+                }
+            }
+
+            // Visibility: a VM is "hidden" if its owner dock does not contain it.
+            bool visible = vm.Owner is Dock.Model.Core.IDock d &&
+                           d.VisibleDockables?.Contains(vm) == true;
+            if (!visible) hidden.Add(vm.Id);
+        }
 
         var state = new LayoutState
         {
@@ -253,6 +311,9 @@ public partial class MainWindow : Window
             WindowWidth     = _restoreWidth,
             WindowHeight    = _restoreHeight,
             DockProportions = props,
+            LayoutMode      = _isMdiMode ? "Mdi" : "Tabbed",
+            MdiBounds       = mdiBounds,
+            HiddenDockables = hidden,
         };
 
         _persistence.SaveLayout(path, state);
@@ -268,7 +329,59 @@ public partial class MainWindow : Window
         if (Enum.TryParse<WindowState>(state.WindowState, out var ws))
             WindowState = ws;
 
+        // Switch layout mode if the saved state differs from current.
+        bool wantMdi = string.Equals(state.LayoutMode, "Mdi", StringComparison.OrdinalIgnoreCase);
+        if (wantMdi != _isMdiMode)
+            SwitchLayoutMode(wantMdi);
+
         ApplyProportions(MainDockControl.Layout, state.DockProportions);
+
+        // Restore MDI bounds & state per dockable.
+        if (state.MdiBounds is { Count: > 0 })
+        {
+            foreach (var vm in AllDockables())
+            {
+                if (string.IsNullOrEmpty(vm.Id)) continue;
+                if (!state.MdiBounds.TryGetValue(vm.Id, out var b)) continue;
+                if (vm is Dock.Model.Controls.IMdiDocument mdi)
+                {
+                    mdi.MdiBounds = new Dock.Model.Core.DockRect(b.X, b.Y, b.Width, b.Height);
+                    if (Enum.TryParse<Dock.Model.Core.MdiWindowState>(b.State, out var mst))
+                        mdi.MdiState = mst;
+                }
+            }
+        }
+
+        // Apply hidden-dockables list: any VM in the list but currently visible → hide it.
+        // Any VM currently visible but NOT in the list → keep visible (no action needed).
+        // Any VM hidden but not in the list → restore (add back).
+        var hiddenSet = new HashSet<string>(state.HiddenDockables ?? new List<string>());
+        foreach (var vm in AllDockables())
+        {
+            if (string.IsNullOrEmpty(vm.Id)) continue;
+
+            bool isVisible = vm.Owner is Dock.Model.Core.IDock d &&
+                             d.VisibleDockables?.Contains(vm) == true;
+
+            if (hiddenSet.Contains(vm.Id) && isVisible)
+            {
+                _factory.RemoveDockable(vm, collapse: false);
+            }
+            else if (!hiddenSet.Contains(vm.Id) && !isVisible)
+            {
+                // Re-add to the correct dock based on mode.
+                Dock.Model.Core.IDock? target = _isMdiMode
+                    ? _factory.MdiDock
+                    : (vm == _gameOutputVm || vm == _rawOutputVm || vm == _logVm
+                        ? _factory.Find(x => x.Id == "MainOutput") as Dock.Model.Core.IDock
+                          ?? _factory.StreamsDock
+                        : vm == _roomVm
+                            ? _factory.Find(x => x.Id == "RoomPanel") as Dock.Model.Core.IDock
+                              ?? _factory.StreamsDock
+                            : _factory.StreamsDock);
+                if (target != null) _factory.AddDockable(target, vm);
+            }
+        }
     }
 
     private static void CollectProportions(IDockable? dockable, Dictionary<string, double> result)
@@ -631,8 +744,16 @@ public partial class MainWindow : Window
         foreach (var menuItem in WindowsMenu.Items.OfType<MenuItem>())
         {
             if (menuItem.Tag is not Dock.Model.Core.IDockable vm) continue;
-            var isVisible = vm.Owner is Dock.Model.Core.IDock dock &&
+            bool isVisible;
+            if (_isMdiMode)
+            {
+                isVisible = _factory.MdiDock?.VisibleDockables?.Contains(vm) == true;
+            }
+            else
+            {
+                isVisible = vm.Owner is Dock.Model.Core.IDock dock &&
                             dock.VisibleDockables?.Contains(vm) == true;
+            }
             menuItem.Icon = new Avalonia.Controls.TextBlock
             {
                 Text       = isVisible ? "✓" : " ",
@@ -687,6 +808,7 @@ public partial class MainWindow : Window
             DefaultExtension = "json",
             Filters          = [new FileDialogFilter { Name = "Layout files", Extensions = ["json"] }],
             InitialFileName  = "layout.json",
+            Directory        = ConfigDir,
         };
 
         var path = await dialog.ShowAsync(this);
@@ -702,6 +824,7 @@ public partial class MainWindow : Window
             Title       = "Load Layout",
             AllowMultiple = false,
             Filters       = [new FileDialogFilter { Name = "Layout files", Extensions = ["json"] }],
+            Directory   = ConfigDir,
         };
 
         var paths = await dialog.ShowAsync(this);
@@ -784,7 +907,7 @@ public partial class MainWindow : Window
 
     // ── Client state (persisted UI toggles) ────────────────────────────────
 
-    private string ClientStatePath => DataPath("clientstate.json");
+    private string ClientStatePath => ConfigPath("clientstate.json");
     private string AutoLogDir      => DataPath("Logs");
 
     private void LoadClientState()
@@ -831,12 +954,26 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Set the active profile name for log filenames. Call this when a
-    /// profile connects (before logging starts).
+    /// profile connects (before logging starts).  Also loads the profile's
+    /// saved layout if one exists; otherwise leaves the current layout alone.
     /// </summary>
     private void SetAutoLogProfile(string profileName)
     {
+        // Before switching profiles, persist the current (default or previous
+        // profile) layout so we don't lose unsaved changes.
+        SaveLayout();
+
         _autoLogProfileName = profileName;
+        _currentProfileName = profileName;
         if (_autoLogEnabled) EnsureAutoLogOpen();
+
+        // Load per-profile layout if one exists.
+        var profileLayout = _persistence.LoadLayout(ProfileLayoutPath(profileName));
+        if (profileLayout != null)
+        {
+            RestoreLayout(profileLayout);
+            AppendOutput($"[layout] Loaded saved layout for profile '{profileName}'");
+        }
     }
 
     private void EnsureAutoLogOpen()

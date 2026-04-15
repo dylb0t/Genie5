@@ -4,12 +4,20 @@
              FontFamily="Cascadia Mono,Consolas,Courier New,monospace"
              FontSize="13">
 
-  <ScrollViewer Name="OutputScrollViewer"
-                VerticalScrollBarVisibility="Auto"
-                HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Name="OutputPanel"
-                Margin="6"
-                Spacing="1"/>
-  </ScrollViewer>
+  <!-- The single-row * Grid gives the ScrollViewer a bounded height even
+       when the hosting parent (e.g. an MDI ContentPresenter) propagates an
+       infinite available height during measure. Without this pin the
+       inner StackPanel would grow to match the content and the ScrollViewer
+       would never detect overflow, hiding the scrollbar. -->
+  <Grid RowDefinitions="*">
+    <ScrollViewer Grid.Row="0"
+                  Name="OutputScrollViewer"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Name="OutputPanel"
+                  Margin="6"
+                  Spacing="1"/>
+    </ScrollViewer>
+  </Grid>
 
 </UserControl>

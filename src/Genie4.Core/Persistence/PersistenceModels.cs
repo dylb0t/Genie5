@@ -77,4 +77,23 @@ public sealed class LayoutState
 
     /// <summary>Dock pane proportions keyed by pane Id.</summary>
     public Dictionary<string, double> DockProportions { get; set; } = new();
+
+    /// <summary>"Tabbed" or "Mdi".</summary>
+    public string LayoutMode { get; set; } = "Tabbed";
+
+    /// <summary>Per-dockable MDI bounds keyed by dockable Id (MDI mode only).</summary>
+    public Dictionary<string, MdiWindowBounds> MdiBounds { get; set; } = new();
+
+    /// <summary>IDs of dockables that were hidden (closed) at save time.</summary>
+    public List<string> HiddenDockables { get; set; } = new();
+}
+
+public sealed class MdiWindowBounds
+{
+    public double X      { get; set; }
+    public double Y      { get; set; }
+    public double Width  { get; set; }
+    public double Height { get; set; }
+    /// <summary>Normal, Minimized, Maximized.</summary>
+    public string State  { get; set; } = "Normal";
 }

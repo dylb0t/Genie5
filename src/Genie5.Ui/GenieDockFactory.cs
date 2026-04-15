@@ -44,28 +44,28 @@ public sealed class GenieDockFactory : Factory
         // Centre-left: main game output (top) + streams tabs (bottom)
         var mainDock = new DocumentDock
         {
-            Id                = "MainOutput",
-            Title             = "Main",
-            IsCollapsable     = false,
-            CanCreateDocument = false,
-            Proportion        = 0.65,
-            VisibleDockables  = CreateList<IDockable>(_mainVm, _rawVm),
-            ActiveDockable    = _mainVm
+            Id                     = "MainOutput",
+            Title                  = "Main",
+            IsCollapsable          = false,
+            CanCreateDocument      = false,
+            CanCloseLastDockable   = true,
+            Proportion             = 0.65,
+            VisibleDockables       = CreateList<IDockable>(_mainVm, _rawVm),
+            ActiveDockable         = _mainVm
         };
 
-        var streamDockables = new List<IDockable>();
-        foreach (var vm in _streamVms)
-            streamDockables.Add(vm);
+        var streamDockables = CreateList<IDockable>(_streamVms);
 
         StreamsDock = new DocumentDock
         {
-            Id                = "Streams",
-            Title             = "Streams",
-            IsCollapsable     = false,
-            CanCreateDocument = false,
-            Proportion        = 0.35,
-            VisibleDockables  = streamDockables,
-            ActiveDockable    = _streamVms.Length > 0 ? _streamVms[0] : null
+            Id                     = "Streams",
+            Title                  = "Streams",
+            IsCollapsable          = false,
+            CanCreateDocument      = false,
+            CanCloseLastDockable   = true,
+            Proportion             = 0.35,
+            VisibleDockables       = streamDockables,
+            ActiveDockable         = _streamVms.Length > 0 ? _streamVms[0] : null
         };
         var streamsDock = StreamsDock;
 
@@ -84,13 +84,14 @@ public sealed class GenieDockFactory : Factory
         // Right panel: room info only (map is a floating window)
         var roomDock = new DocumentDock
         {
-            Id                = "RoomPanel",
-            Title             = "Room",
-            IsCollapsable     = false,
-            CanCreateDocument = false,
-            Proportion        = 1.0,
-            VisibleDockables  = CreateList<IDockable>(_roomVm),
-            ActiveDockable    = _roomVm
+            Id                     = "RoomPanel",
+            Title                  = "Room",
+            IsCollapsable          = false,
+            CanCreateDocument      = false,
+            CanCloseLastDockable   = true,
+            Proportion             = 1.0,
+            VisibleDockables       = CreateList<IDockable>(_roomVm),
+            ActiveDockable         = _roomVm
         };
 
         var rightPanel = new ProportionalDock
@@ -128,21 +129,26 @@ public sealed class GenieDockFactory : Factory
     {
         StreamsDock = null;
 
-        // Single DocumentDock in MDI mode containing all windows.
-        var allDockables = new List<IDockable> { _mainVm, _rawVm };
-        foreach (var vm in _streamVms)
-            allDockables.Add(vm);
-        allDockables.Add(_roomVm);
+        // Single DocumentDock in MDI mode containing all windows. Use the
+        // factory-provided ObservableCollection so MdiDocumentControl's
+        // ItemsControl binding observes add/remove changes (a plain List
+        // silently drops change notifications and the visuals stick around
+        // after close).
+        var allVms = new List<IDockable> { _mainVm, _rawVm };
+        allVms.AddRange(_streamVms);
+        allVms.Add(_roomVm);
+        var allDockables = CreateList<IDockable>(allVms.ToArray());
 
         MdiDock = new DocumentDock
         {
-            Id                = "MdiDock",
-            Title             = "MDI",
-            IsCollapsable     = false,
-            CanCreateDocument = false,
-            LayoutMode        = DocumentLayoutMode.Mdi,
-            VisibleDockables  = allDockables,
-            ActiveDockable    = _mainVm,
+            Id                     = "MdiDock",
+            Title                  = "MDI",
+            IsCollapsable          = false,
+            CanCreateDocument      = false,
+            CanCloseLastDockable   = true,
+            LayoutMode             = DocumentLayoutMode.Mdi,
+            VisibleDockables       = allDockables,
+            ActiveDockable         = _mainVm,
         };
 
         var rootLayout = new ProportionalDock
@@ -165,8 +171,12 @@ public sealed class GenieDockFactory : Factory
     }
 
     /// <summary>
-    /// Override close to just hide the dockable (remove from its parent)
-    /// instead of destroying it.  The Windows menu can re-add it later.
+    /// Close just hides the dockable without destroying it so the Windows
+    /// menu can restore it later. We keep the VM reference elsewhere
+    /// (streamVms / mainVm / etc.), so removing from the owner's
+    /// VisibleDockables is sufficient — RemoveDockable fires the
+    /// INotifyCollectionChanged needed by MdiDocumentControl to drop the
+    /// visual child.
     /// </summary>
     public override void CloseDockable(IDockable dockable)
     {
