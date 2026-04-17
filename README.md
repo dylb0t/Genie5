@@ -1,11 +1,12 @@
 # Genie5
 
 A cross-platform port of [Genie4](https://github.com/GenieClient/Genie4), the DragonRealms MUD client, built with .NET 8 and Avalonia UI.
+
 Tabbed View
 ![Tabbed View](image-1.png)
 
 MDI View
-![MDI View](image.png)
+![MDI View](image-3.png)
 
 ## Features
 

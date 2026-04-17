@@ -15,6 +15,14 @@
     </DataTemplate>
   </Application.DataTemplates>
 
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://Genie/Themes/MdiDocumentWindowSkin.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
   <Application.Styles>
     <FluentTheme />
     <DockFluentTheme DensityStyle="Compact" />

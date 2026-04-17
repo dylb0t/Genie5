@@ -28,13 +28,13 @@ public partial class GameOutputView : UserControl
         OutputScrollViewer.LayoutUpdated += (_, _) =>
         {
             var sv = OutputScrollViewer;
-            Console.Error.WriteLine(
-                $"[ScrollDiag:{_vm?.Id ?? "?"}] " +
-                $"Root={Bounds.Width:F0}x{Bounds.Height:F0} " +
-                $"SV={sv.Bounds.Width:F0}x{sv.Bounds.Height:F0} " +
-                $"VP={sv.Viewport.Width:F0}x{sv.Viewport.Height:F0} " +
-                $"EXT={sv.Extent.Width:F0}x{sv.Extent.Height:F0} " +
-                $"Lines={OutputPanel.Children.Count}");
+            // Console.Error.WriteLine(
+            //     $"[ScrollDiag:{_vm?.Id ?? "?"}] " +
+            //     $"Root={Bounds.Width:F0}x{Bounds.Height:F0} " +
+            //     $"SV={sv.Bounds.Width:F0}x{sv.Bounds.Height:F0} " +
+            //     $"VP={sv.Viewport.Width:F0}x{sv.Viewport.Height:F0} " +
+            //     $"EXT={sv.Extent.Width:F0}x{sv.Extent.Height:F0} " +
+            //     $"Lines={OutputPanel.Children.Count}");
         };
     }
 

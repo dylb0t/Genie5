@@ -54,29 +54,44 @@ public partial class MainWindow : Window
         _logVm        = new GameOutputViewModel("Log",       "Log",  canClose: true);
 
         // Create a dockable panel for each sub-stream
-        var streams = new (string id, string title)[]
+        var streams = new (string id, string title, bool hidden)[]
         {
-            ("thoughts",   "Thoughts"),
-            ("logons",     "Arrivals"),
-            ("death",      "Deaths"),
-            ("combat",     "Combat"),
-            ("inv",        "Inventory"),
-            ("familiar",   "Familiar"),
-            ("percWindow", "Perception"),
+            ("inv",           "Inventory",      false),
+            ("familiar",      "Familiar",       false),
+            ("thoughts",      "Thoughts",       false),
+            ("logons",        "Arrivals",        false),
+            ("death",         "Deaths",          false),
+            ("talk",          "Talk",            true),
+            ("whispers",      "Whispers",        true),
+            ("conversation",  "Conversation",    true),
+            ("assess",        "Assess",          true),
+            ("group",         "Group",           true),
+            ("atmospherics",  "Atmospherics",    true),
+            ("ooc",           "OOC",             true),
+            ("activeSpells",  "Active Spells",   true),
+            ("expMods",       "ExpMods",         true),
+            ("itemLog",       "ItemLog",         true),
+            ("chatter",       "Chatter",         true),
+            ("combat",        "Combat",          false),
+            ("debug",         "Debug",           true),
+            ("portrait",      "Portrait",        true),
+            ("percWindow",    "Perception",      false),
         };
+        var defaultHidden = new HashSet<string>();
         var streamVmArray = new GameOutputViewModel[streams.Length + 1];
         for (int i = 0; i < streams.Length; i++)
         {
             var vm = new GameOutputViewModel(streams[i].id, streams[i].title, canClose: true);
             _streamVms[streams[i].id] = vm;
             streamVmArray[i] = vm;
+            if (streams[i].hidden) defaultHidden.Add(streams[i].id);
         }
         streamVmArray[streams.Length] = _logVm;
 
         InitializeEngines();
 
         // Attach window settings after all VMs exist so Settings props are set before any rendering.
-        var streamTuples = streams.Select((s, i) => (s.id, s.title, streamVmArray[i]));
+        var streamTuples = streams.Select((s, i) => (id: s.id, title: s.title, vm: streamVmArray[i]));
         AttachWindowSettings(_gameOutputVm, _rawOutputVm, _logVm, streamTuples);
 
         LoadClientState();
@@ -90,6 +105,10 @@ public partial class MainWindow : Window
 
         MainDockControl.Factory = _factory;
         MainDockControl.Layout  = layout;
+
+        foreach (var id in defaultHidden)
+            if (_streamVms.TryGetValue(id, out var hiddenVm))
+                _factory.RemoveDockable(hiddenVm, collapse: false);
 
         StatusBar.Attach(_gslGameState);
         _roomVm.Attach(_gslGameState);

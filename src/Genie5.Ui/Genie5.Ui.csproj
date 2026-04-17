@@ -19,6 +19,8 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets/app.png" />
+    <AvaloniaResource Include="Assets/skin_*.bmp" />
+    <AvaloniaResource Include="Assets/skin_*.png" />
   </ItemGroup>
 
 <ItemGroup>
