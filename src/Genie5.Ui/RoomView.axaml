@@ -3,12 +3,13 @@
              xmlns:local="clr-namespace:Genie5.Ui"
              xmlns:conv="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia"
              x:Class="Genie5.Ui.RoomView"
+             x:Name="RoomRoot"
              x:DataType="local:RoomViewModel"
              FontFamily="Verdana,Cascadia Mono,Consolas,Courier New,monospace"
              FontSize="12"
              Background="#141414">
 
-  <DockPanel>
+  <DockPanel Name="RoomDockPanel">
 
     <Border DockPanel.Dock="Top"
             Background="#1C1C1C"
