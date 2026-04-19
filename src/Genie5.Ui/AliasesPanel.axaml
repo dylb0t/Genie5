@@ -9,6 +9,7 @@
       <Button Content="Add New"  Click="OnAdd" />
       <Button Content="Delete"   Click="OnDelete" />
       <Button Content="Toggle"   Click="OnToggle" />
+      <Button Content="Import…"  Click="OnImport" />
     </StackPanel>
 
     <!-- List + edit form -->
