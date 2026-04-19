@@ -6,7 +6,7 @@ Tabbed View
 ![Tabbed View](image-1.png)
 
 MDI View
-![MDI View](image-3.png)
+![MDI View](image-4.png)
 
 ## Features
 

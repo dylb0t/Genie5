@@ -12,24 +12,39 @@
     <StackPanel Orientation="Vertical">
 
       <!-- Top row: RT | Compass | Body | L hand | R hand | Spell | Indicators -->
-      <Grid ColumnDefinitions="90,72,40,*,*,Auto,*"
-            Height="56"
+      <Grid ColumnDefinitions="110,40,36,Auto,*,*,Auto,*"
+            Height="44"
             Margin="4,2,4,2">
 
-        <!-- RT counter -->
-        <StackPanel Grid.Column="0" Orientation="Vertical"
-                    VerticalAlignment="Center" Spacing="2" Margin="0,0,4,0">
-          <TextBlock Text="RT" Foreground="#FF6B6B" FontSize="10"
-                     HorizontalAlignment="Center"/>
-          <Grid Height="14">
-            <ProgressBar Name="RoundtimeBar" Minimum="0" Maximum="10" Value="0"
-                         Foreground="#E53935" Background="#2A2A2A" Height="14"
-                         IsVisible="False"/>
-            <TextBlock Name="RoundtimeText" Text="" FontSize="10"
-                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Foreground="White"/>
-          </Grid>
-        </StackPanel>
+        <!-- RT counter: vertically-stacked R/T label + always-visible box -->
+        <Grid Grid.Column="0" ColumnDefinitions="Auto,*"
+              VerticalAlignment="Center" Margin="2,0,6,0">
+          <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="-2"
+                      VerticalAlignment="Center" Margin="2,0,6,0">
+            <TextBlock Text="R" Foreground="#888888" FontSize="11" FontWeight="Bold"
+                       HorizontalAlignment="Center"/>
+            <TextBlock Text="T" Foreground="#888888" FontSize="11" FontWeight="Bold"
+                       HorizontalAlignment="Center"/>
+          </StackPanel>
+          <Border Name="RoundtimeBox" Grid.Column="1"
+                  Background="#0A0A0A"
+                  BorderBrush="#555"
+                  BorderThickness="1"
+                  Height="32"
+                  VerticalAlignment="Center"
+                  ClipToBounds="True">
+            <Panel>
+              <Rectangle Name="RoundtimeFill"
+                         Fill="#1E66E5"
+                         HorizontalAlignment="Left"
+                         VerticalAlignment="Stretch"
+                         Width="0"/>
+              <TextBlock Name="RoundtimeText" Text="" FontSize="14" FontWeight="Bold"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                         Foreground="White"/>
+            </Panel>
+          </Border>
+        </Grid>
 
         <!-- Compass -->
         <local:CompassView Name="Compass"
@@ -43,8 +58,15 @@
                         VerticalAlignment="Center"
                         HorizontalAlignment="Center"/>
 
+        <!-- Status effect icons (stunned, bleeding, invisible, hidden, joined, webbed) -->
+        <local:StatusIconBar Name="StatusIcons"
+                             Grid.Column="3"
+                             VerticalAlignment="Center"
+                             HorizontalAlignment="Left"
+                             Margin="8,0,8,0"/>
+
         <!-- Left hand -->
-        <Border Grid.Column="3"
+        <Border Grid.Column="4"
                 Margin="4,4"
                 Background="#1A1A1A"
                 BorderBrush="#333"
@@ -60,7 +82,7 @@
         </Border>
 
         <!-- Right hand -->
-        <Border Grid.Column="4"
+        <Border Grid.Column="5"
                 Margin="4,4"
                 Background="#1A1A1A"
                 BorderBrush="#333"
@@ -76,7 +98,7 @@
         </Border>
 
         <!-- Spell + cast time -->
-        <Border Grid.Column="5"
+        <Border Grid.Column="6"
                 Margin="4,4"
                 Background="#1A1A1A"
                 BorderBrush="#333"
@@ -102,25 +124,14 @@
           </StackPanel>
         </Border>
 
-        <!-- Status indicators -->
-        <WrapPanel Grid.Column="6"
+        <!-- Status indicators (text; icons handle stunned/bleeding/invisible/hidden/joined/webbed) -->
+        <WrapPanel Grid.Column="7"
                    Orientation="Horizontal"
                    VerticalAlignment="Center"
                    Margin="6,0">
 
-          <TextBlock Name="IndicatorStanding"  Text="Standing"  Foreground="#888888" Margin="0,0,6,0"/>
-          <TextBlock Name="IndicatorSitting"   Text="Sitting"   Foreground="#AAAAAA" Margin="0,0,6,0" IsVisible="False"/>
-          <TextBlock Name="IndicatorKneeling"  Text="Kneeling"  Foreground="#FFCC00" Margin="0,0,6,0" IsVisible="False"/>
-          <TextBlock Name="IndicatorProne"     Text="Prone"     Foreground="#FF9900" Margin="0,0,6,0" IsVisible="False"/>
-          <TextBlock Name="IndicatorStunned"   Text="STUNNED"   Foreground="#FF4444" FontWeight="Bold" Margin="0,0,6,0" IsVisible="False"/>
-          <TextBlock Name="IndicatorDead"      Text="DEAD"      Foreground="#FF0000" FontWeight="Bold" Margin="0,0,6,0" IsVisible="False"/>
-          <TextBlock Name="IndicatorBleeding"  Text="Bleeding"  Foreground="#FF6666" Margin="0,0,6,0" IsVisible="False"/>
           <TextBlock Name="IndicatorPoisoned"  Text="Poisoned"  Foreground="#88CC44" Margin="0,0,6,0" IsVisible="False"/>
           <TextBlock Name="IndicatorDiseased"  Text="Diseased"  Foreground="#AADD44" Margin="0,0,6,0" IsVisible="False"/>
-          <TextBlock Name="IndicatorWebbed"    Text="Webbed"    Foreground="#88AAFF" Margin="0,0,6,0" IsVisible="False"/>
-          <TextBlock Name="IndicatorHidden"    Text="Hidden"    Foreground="#888888" Margin="0,0,6,0" IsVisible="False"/>
-          <TextBlock Name="IndicatorInvisible" Text="Invisible" Foreground="#666666" Margin="0,0,6,0" IsVisible="False"/>
-          <TextBlock Name="IndicatorJoined"    Text="Joined"    Foreground="#AAAAFF" Margin="0,0,6,0" IsVisible="False"/>
 
         </WrapPanel>
 

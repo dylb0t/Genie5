@@ -21,6 +21,7 @@
     <AvaloniaResource Include="Assets/app.png" />
     <AvaloniaResource Include="Assets/skin_*.bmp" />
     <AvaloniaResource Include="Assets/skin_*.png" />
+    <AvaloniaResource Include="Assets/Icons/*.png" />
   </ItemGroup>
 
 <ItemGroup>

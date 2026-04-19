@@ -1,67 +1,78 @@
 using System;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Genie4.Core.Gsl;
 
 namespace Genie5.Ui;
 
-/// <summary>
-/// Simple human-silhouette control.  Body zones are coloured by wound severity.
-/// Currently shows global bleeding state; per-zone wounds tracked in todo.
-/// </summary>
+// Draws the authentic Genie4 posture sprite (standing/sitting/kneeling/prone/dead)
+// from Assets/Icons. Black pixels are made transparent at load time so the sprite
+// blends cleanly onto any background.
 public sealed class BodyView : Control
 {
-    private static readonly IBrush NormalFill   = new SolidColorBrush(Color.Parse("#2A2A2A"));
-    private static readonly IBrush BleedFill    = new SolidColorBrush(Color.Parse("#7A1515"));
-    private static readonly IBrush OutlineBrush = new SolidColorBrush(Color.Parse("#555555"));
-    private static readonly Pen    OutlinePen   = new(OutlineBrush, 1);
-    private static readonly Pen    BleedPen     = new(new SolidColorBrush(Color.Parse("#AA2020")), 1);
+    private enum Posture { Standing, Sitting, Kneeling, Prone, Dead }
 
-    private bool _bleeding;
+    private static readonly Bitmap StandingBmp = Load("standing.png");
+    private static readonly Bitmap SittingBmp  = Load("sitting.png");
+    private static readonly Bitmap KneelingBmp = Load("kneeling.png");
+    private static readonly Bitmap ProneBmp    = Load("prone.png");
+    private static readonly Bitmap DeadBmp     = Load("dead.png");
+
+    private Posture _posture = Posture.Standing;
 
     public BodyView()
     {
-        Width  = 32;
-        Height = 52;
+        // Match the authentic 28×32 sprite at 1:1 to preserve pixel clarity.
+        Width  = 28;
+        Height = 32;
     }
 
     public void Attach(GslGameState state)
     {
         state.StateChanged += () =>
         {
-            _bleeding = state.Bleeding;
+            _posture =
+                state.Dead     ? Posture.Dead     :
+                state.Prone    ? Posture.Prone    :
+                state.Kneeling ? Posture.Kneeling :
+                state.Sitting  ? Posture.Sitting  :
+                                 Posture.Standing;
             InvalidateVisual();
         };
     }
 
     public override void Render(DrawingContext ctx)
     {
-        var fill = _bleeding ? BleedFill : NormalFill;
-        var pen  = _bleeding ? BleedPen  : OutlinePen;
+        var bmp = _posture switch
+        {
+            Posture.Dead     => DeadBmp,
+            Posture.Prone    => ProneBmp,
+            Posture.Kneeling => KneelingBmp,
+            Posture.Sitting  => SittingBmp,
+            _                => StandingBmp,
+        };
 
-        double w  = Bounds.Width;
-        double cx = w / 2;
+        var bw = bmp.PixelSize.Width;
+        var bh = bmp.PixelSize.Height;
+        var scale = Math.Min(Bounds.Width / bw, Bounds.Height / bh);
+        var dw = bw * scale;
+        var dh = bh * scale;
+        var dx = (Bounds.Width  - dw) / 2;
+        var dy = (Bounds.Height - dh) / 2;
+        var dst = new Rect(dx, dy, dw, dh);
 
-        // Head
-        ctx.DrawEllipse(fill, pen, new Point(cx, 6), 5, 5);
+        using (ctx.PushRenderOptions(new RenderOptions { BitmapInterpolationMode = BitmapInterpolationMode.None }))
+            ctx.DrawImage(bmp, dst);
+    }
 
-        // Neck
-        ctx.DrawRectangle(fill, pen, new Rect(cx - 2, 11, 4, 3));
-
-        // Torso
-        ctx.DrawRectangle(fill, pen, new Rect(cx - 8, 14, 16, 16));
-
-        // Left arm
-        ctx.DrawRectangle(fill, pen, new Rect(cx - 14, 14, 5, 13));
-
-        // Right arm
-        ctx.DrawRectangle(fill, pen, new Rect(cx + 9, 14, 5, 13));
-
-        // Left leg
-        ctx.DrawRectangle(fill, pen, new Rect(cx - 8, 30, 6, 18));
-
-        // Right leg
-        ctx.DrawRectangle(fill, pen, new Rect(cx + 2, 30, 6, 18));
+    private static Bitmap Load(string name)
+    {
+        var uri = new Uri($"avares://Genie/Assets/Icons/{name}");
+        using var stream = AssetLoader.Open(uri);
+        return IconLoader.LoadBlackTransparent(stream);
     }
 }

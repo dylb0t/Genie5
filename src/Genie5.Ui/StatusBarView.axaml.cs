@@ -28,6 +28,7 @@ public partial class StatusBarView : UserControl
 
         Compass.Attach(state);
         BodyDiagram.Attach(state);
+        StatusIcons.Attach(state);
     }
 
     private void OnStateChanged() => Refresh();
@@ -64,6 +65,11 @@ public partial class StatusBarView : UserControl
         }
     }
 
+    // Max seconds seen during the current countdown — used to scale the fill bar
+    // so it visibly drains from full to empty as the timer ticks down.
+    private long _rtMaxSeen;
+    private long _ctMaxSeen;
+
     private void RefreshTimeBars()
     {
         if (_state is null) return;
@@ -74,17 +80,7 @@ public partial class StatusBarView : UserControl
             ? Math.Max(0L, _state.RoundTimeEpoch - now)
             : 0L;
 
-        RoundtimeBar.IsVisible = rt > 0;
-        if (rt > 0)
-        {
-            RoundtimeBar.Maximum = Math.Max(rt, 1);
-            RoundtimeBar.Value   = rt;
-            RoundtimeText.Text   = $"{rt}s";
-        }
-        else
-        {
-            RoundtimeText.Text = string.Empty;
-        }
+        UpdateTimerBox(rt, ref _rtMaxSeen, RoundtimeBox, RoundtimeFill, RoundtimeText, string.Empty);
 
         var ct = _state.CastTimeEpoch > 0
             ? Math.Max(0L, _state.CastTimeEpoch - now)
@@ -93,33 +89,46 @@ public partial class StatusBarView : UserControl
         CastTimeBar.IsVisible = ct > 0;
         if (ct > 0)
         {
-            CastTimeBar.Maximum = Math.Max(ct, 1);
+            if (ct > _ctMaxSeen) _ctMaxSeen = ct;
+            CastTimeBar.Maximum = _ctMaxSeen;
             CastTimeBar.Value   = ct;
             CastTimeText.Text   = $"CT {ct}s";
         }
         else
         {
+            _ctMaxSeen = 0;
             CastTimeText.Text = string.Empty;
         }
+    }
+
+    private static void UpdateTimerBox(long remaining, ref long maxSeen,
+        Border box, Avalonia.Controls.Shapes.Rectangle fill, TextBlock label, string prefix)
+    {
+        if (remaining <= 0)
+        {
+            maxSeen = 0;
+            fill.Width = 0;
+            label.Text = string.Empty;
+            return;
+        }
+
+        if (remaining > maxSeen) maxSeen = remaining;
+
+        var inner = box.Bounds.Width - box.BorderThickness.Left - box.BorderThickness.Right;
+        if (inner < 0) inner = 0;
+        fill.Width = inner * ((double)remaining / maxSeen);
+        label.Text = string.IsNullOrEmpty(prefix) ? remaining.ToString() : $"{prefix} {remaining}";
     }
 
     private void RefreshIndicators()
     {
         var s = _state!;
 
-        IndicatorStanding.IsVisible  = s.Standing && !s.Sitting && !s.Kneeling && !s.Prone;
-        IndicatorSitting.IsVisible   = s.Sitting;
-        IndicatorKneeling.IsVisible  = s.Kneeling;
-        IndicatorProne.IsVisible     = s.Prone;
-        IndicatorStunned.IsVisible   = s.Stunned;
-        IndicatorDead.IsVisible      = s.Dead;
-        IndicatorBleeding.IsVisible  = s.Bleeding;
+        // Posture, stunned/bleeding/invisible/hidden/joined/webbed, and dead
+        // are surfaced by BodyView + StatusIconBar. Only states without an
+        // icon remain as text here.
         IndicatorPoisoned.IsVisible  = s.Poisoned;
         IndicatorDiseased.IsVisible  = s.Diseased;
-        IndicatorWebbed.IsVisible    = s.Webbed;
-        IndicatorHidden.IsVisible    = s.Hidden;
-        IndicatorInvisible.IsVisible = s.Invisible;
-        IndicatorJoined.IsVisible    = s.Joined;
     }
 
     private void RefreshHands()
