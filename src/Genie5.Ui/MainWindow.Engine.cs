@@ -301,16 +301,20 @@ public partial class MainWindow
                     }
                 }
 
-                // Duplicate speech to the Log panel (without suppressing main output).
-                foreach (var ev in events)
+                // Duplicate speech/whispers to the Log panel using the full line text.
+                // The game sends speech twice (pushStream + popStream); only route
+                // when outside a named stream to avoid duplicates.  Talk routing is
+                // handled by the game's own pushStream id="talk".
+                if (string.IsNullOrEmpty(_gslGameState.CurrentStream)
+                    && events.Any(ev => ev is PresetEvent { PresetId: "speech" or "whispers" }))
                 {
-                    if (ev is PresetEvent { PresetId: "speech" or "whispers" } pe)
-                    {
-                        var logColor = pe.PresetId == "speech" ? "Yellow" : "Cyan";
-                        var logLine  = new RenderLine();
-                        logLine.Spans.Add(new AnsiSpan { Text = pe.Text, Foreground = logColor });
-                        _logVm.AppendLine(logLine);
-                    }
+                    var presetId = events.OfType<PresetEvent>()
+                        .First(ev => ev.PresetId is "speech" or "whispers").PresetId;
+                    var logColor = presetId == "speech" ? "Yellow" : "Cyan";
+                    var logLine = new RenderLine();
+                    foreach (var seg in segments)
+                        logLine.Spans.Add(new AnsiSpan { Text = seg.Text, Foreground = logColor });
+                    _logVm.AppendLine(logLine);
                 }
 
                 var plainText = string.Concat(segments.Select(s => s.Text));

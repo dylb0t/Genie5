@@ -28,6 +28,10 @@ public sealed class GslParser
     private bool          _pendingSpellActive;
     private readonly StringBuilder _pendingSpellText = new();
 
+    // Accumulates inner text between <preset id="…"> … </preset>.
+    private string?       _pendingPresetId;
+    private readonly StringBuilder _pendingPresetText = new();
+
     // Stores the time attribute from <prompt time="…"> until </prompt> closes it.
     private int _pendingPromptTime;
 
@@ -91,13 +95,15 @@ public sealed class GslParser
                 htmlBuf.Append(c);
                 if (c == ';')
                 {
-                    ctx.Text.Append(TranslateHtmlEntity(htmlBuf.ToString()));
+                    var decoded = TranslateHtmlEntity(htmlBuf.ToString());
+                    AppendToActivePending(decoded, ctx);
                     htmlBuf.Clear();
                     inHtml = false;
                 }
                 else if (htmlBuf.Length > 8)
                 {
-                    ctx.Text.Append(htmlBuf);
+                    var overflow = htmlBuf.ToString();
+                    AppendToActivePending(overflow, ctx);
                     htmlBuf.Clear();
                     inHtml = false;
                 }
@@ -111,6 +117,8 @@ public sealed class GslParser
                     _pendingInvText.Append(c);
                 else if (_pendingSpellActive)
                     _pendingSpellText.Append(c);
+                else if (_pendingPresetId is not null)
+                    _pendingPresetText.Append(c);
                 else
                     ctx.Text.Append(c);
             }
@@ -159,6 +167,20 @@ public sealed class GslParser
                     _pendingSpellActive = false;
                     _pendingSpellText.Clear();
                     break;
+                case "preset" when _pendingPresetId is not null:
+                {
+                    var pid = _pendingPresetId;
+                    var ptxt = _pendingPresetText.ToString();
+                    ctx.Flush();
+                    var rule  = _presets.Get(pid);
+                    var color = rule?.ForegroundColor ?? string.Empty;
+                    var bg    = rule?.BackgroundColor ?? string.Empty;
+                    ctx.Events.Add(new PresetEvent(pid, ptxt));
+                    ctx.Segments.Add(new GslSegment(ptxt, ctx.Bold, color, bg));
+                    _pendingPresetId = null;
+                    _pendingPresetText.Clear();
+                    break;
+                }
                 case "prompt":
                     // Text content arrived via the char loop; emit the event now.
                     ctx.Events.Add(new PromptEvent(ctx.Text.ToString(), _pendingPromptTime));
@@ -216,6 +238,15 @@ public sealed class GslParser
                 case "prompt":
                     int.TryParse(AttrFromRaw(fragment, "time"), out _pendingPromptTime);
                     break;
+                case "preset":
+                {
+                    var pid = AttrFromRaw(fragment, "id").ToLower();
+                    if (pid == "whisper") pid = "whispers";
+                    if (pid == "thought") pid = "thoughts";
+                    _pendingPresetId = pid;
+                    _pendingPresetText.Clear();
+                    break;
+                }
                 case "pushStream":
                     ctx.Events.Add(new PushStreamEvent(AttrFromRaw(fragment, "id")));
                     break;
@@ -454,6 +485,20 @@ public sealed class GslParser
 
     private static string StripTags(string s)
         => Regex.Replace(s, "<[^>]*>", string.Empty);
+
+    private void AppendToActivePending(string text, ParseContext ctx)
+    {
+        if (_pendingComponentId is not null)
+            _pendingComponentText.Append(text);
+        else if (_pendingInvId is not null)
+            _pendingInvText.Append(text);
+        else if (_pendingSpellActive)
+            _pendingSpellText.Append(text);
+        else if (_pendingPresetId is not null)
+            _pendingPresetText.Append(text);
+        else
+            ctx.Text.Append(text);
+    }
 
     private static string TranslateHtmlEntity(string entity) => entity switch
     {
