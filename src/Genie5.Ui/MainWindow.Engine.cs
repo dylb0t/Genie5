@@ -183,6 +183,10 @@ public partial class MainWindow
                 // Unknown # commands are silently dropped.
             }));
 
+        // Seed script globals with any user-defined variables loaded earlier.
+        foreach (var v in _variables.Store.GetAll().Values)
+            _scripts.Globals[v.Name] = v.Value;
+
         // Echo commands sent by scripts to the game window using the scriptecho preset.
         _scripts.EchoCommand = (scriptName, cmd) =>
         {
@@ -460,6 +464,9 @@ public partial class MainWindow
                 BackgroundColor = m.BackgroundColor,
                 HighlightLine   = m.HighlightLine,
             });
+
+        foreach (var m in _persistence.LoadVariables(ConfigPath("variables.json")))
+            _variables.Store.Set(m.Name, m.Value);
     }
 
     internal void SaveData()
@@ -468,6 +475,7 @@ public partial class MainWindow
         _persistence.SaveTriggers(ConfigPath("triggers.json"), _triggers.Triggers);
         _persistence.SaveHighlights(ConfigPath("highlights.json"), _highlights.Rules);
         _persistence.SavePresets(ConfigPath("presets.json"), _presets);
+        _persistence.SaveVariables(ConfigPath("variables.json"), _variables.Store);
         _persistence.SaveWindowSettings(ConfigPath("window_settings.json"), _windowSettings);
         _profiles.Save(ProfilesPath);
         _mapper.SaveActiveZone();

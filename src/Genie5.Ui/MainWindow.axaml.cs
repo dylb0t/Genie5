@@ -694,8 +694,18 @@ public partial class MainWindow : Window
 
     private void OnSettings(object? sender, RoutedEventArgs e)
     {
-        var config = new FormConfig(_aliases, _triggers, _highlights, _presets, _windowSettings);
+        var config = new FormConfig(_aliases, _triggers, _highlights, _presets, _windowSettings,
+                                    _variables.Store, SyncVariablesToScriptGlobals);
         config.Show();
+    }
+
+    // Mirror user-defined variables into the script engine's Globals dict so
+    // scripts can read them as $name alongside engine-set values (roomid,
+    // righthand, etc.).
+    private void SyncVariablesToScriptGlobals()
+    {
+        foreach (var v in _variables.Store.GetAll().Values)
+            _scripts.Globals[v.Name] = v.Value;
     }
 
     // All panels that can be toggled, paired with the dock that owns them.

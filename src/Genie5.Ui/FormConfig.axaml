@@ -26,6 +26,10 @@
         <local:PresetsPanel Name="PresetsPanelCtrl" />
       </TabItem>
 
+      <TabItem Header="Variables">
+        <local:VariablesPanel Name="VariablesPanelCtrl" />
+      </TabItem>
+
       <TabItem Header="Layout">
         <local:LayoutPanel Name="LayoutPanelCtrl" />
       </TabItem>
