@@ -11,10 +11,21 @@
     </StackPanel>
 
     <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="4">
-      <ListBox Name="ItemsList"
-               Grid.Column="0"
-               Margin="0,0,4,0"
-               SelectionChanged="OnSelectionChanged" />
+      <DataGrid Name="ItemsList"
+                Grid.Column="0"
+                Margin="0,0,4,0"
+                IsReadOnly="True"
+                SelectionMode="Single"
+                CanUserSortColumns="True"
+                GridLinesVisibility="Horizontal"
+                HeadersVisibility="Column"
+                x:CompileBindings="False"
+                SelectionChanged="OnSelectionChanged">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Name"  Binding="{Binding Name}"  Width="Auto" />
+          <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*" />
+        </DataGrid.Columns>
+      </DataGrid>
 
       <Grid Grid.Column="1"
             RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"

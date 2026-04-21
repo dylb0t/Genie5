@@ -2,13 +2,26 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Genie5.Ui.PresetsPanel">
 
-  <Grid ColumnDefinitions="200,*" Margin="6">
+  <Grid ColumnDefinitions="320,*" Margin="6">
 
     <!-- Left: list of presets -->
-    <ListBox Name="PresetList"
-             Grid.Column="0"
-             Margin="0,0,6,0"
-             SelectionChanged="OnSelectionChanged" />
+    <DataGrid Name="PresetList"
+              Grid.Column="0"
+              Margin="0,0,6,0"
+              IsReadOnly="True"
+              SelectionMode="Single"
+              CanUserSortColumns="True"
+              GridLinesVisibility="Horizontal"
+              HeadersVisibility="Column"
+              x:CompileBindings="False"
+              SelectionChanged="OnSelectionChanged">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Id"   Binding="{Binding Id}"              Width="*" />
+        <DataGridTextColumn Header="Fg"   Binding="{Binding ForegroundColor}" Width="Auto" />
+        <DataGridTextColumn Header="Bg"   Binding="{Binding BackgroundColor}" Width="Auto" />
+        <DataGridTextColumn Header="Line" Binding="{Binding LineGlyph}"       Width="40" />
+      </DataGrid.Columns>
+    </DataGrid>
 
     <!-- Right: editor -->
     <StackPanel Grid.Column="1" Spacing="8">

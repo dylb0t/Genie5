@@ -8,6 +8,8 @@ namespace Genie5.Ui;
 
 public partial class ClassesPanel : UserControl
 {
+    public sealed record ClassRow(string EnabledGlyph, string Name, bool IsActive);
+
     private ClassEngine? _engine;
     private Action?      _onChanged;
 
@@ -23,22 +25,21 @@ public partial class ClassesPanel : UserControl
     private void Refresh()
     {
         if (_engine is null) return;
+        var keep = (ItemsList.SelectedItem as ClassRow)?.Name;
         ItemsList.ItemsSource = _engine.GetAll()
-            .Select(kv => $"{(kv.Value ? "✓" : "✗")}  {kv.Key}")
+            .Select(kv => new ClassRow(kv.Value ? "✓" : "✗", kv.Key, kv.Value))
             .ToList();
+        if (keep is not null)
+            ItemsList.SelectedItem = ((IEnumerable<ClassRow>)ItemsList.ItemsSource)
+                .FirstOrDefault(r => r.Name == keep);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_engine is null) return;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0) return;
-        var entries = _engine.GetAll().ToList();
-        if (idx >= entries.Count) return;
-        var kv = entries[idx];
-        NameBox.Text         = kv.Key;
-        ActiveCheck.IsChecked = kv.Value;
-        StatusText.Text      = string.Empty;
+        if (_engine is null || ItemsList.SelectedItem is not ClassRow row) return;
+        NameBox.Text          = row.Name;
+        ActiveCheck.IsChecked = row.IsActive;
+        StatusText.Text       = string.Empty;
     }
 
     private void OnRefresh(object? sender, RoutedEventArgs e) => Refresh();
@@ -67,11 +68,8 @@ public partial class ClassesPanel : UserControl
         var name = NameBox.Text?.Trim() ?? string.Empty;
         if (string.IsNullOrEmpty(name))
         {
-            var idx = ItemsList.SelectedIndex;
-            if (idx < 0) { StatusText.Text = "Select a class to remove."; return; }
-            var entries = _engine.GetAll().ToList();
-            if (idx >= entries.Count) return;
-            name = entries[idx].Key;
+            if (ItemsList.SelectedItem is not ClassRow row) { StatusText.Text = "Select a class to remove."; return; }
+            name = row.Name;
         }
         if (name.Equals("default", StringComparison.OrdinalIgnoreCase))
         {
@@ -136,9 +134,9 @@ public partial class ClassesPanel : UserControl
 
     private void ClearForm()
     {
-        ItemsList.SelectedIndex = -1;
-        NameBox.Text            = string.Empty;
-        ActiveCheck.IsChecked   = true;
-        StatusText.Text         = string.Empty;
+        ItemsList.SelectedItem = null;
+        NameBox.Text           = string.Empty;
+        ActiveCheck.IsChecked  = true;
+        StatusText.Text        = string.Empty;
     }
 }

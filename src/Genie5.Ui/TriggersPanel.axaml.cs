@@ -9,6 +9,8 @@ namespace Genie5.Ui;
 
 public partial class TriggersPanel : UserControl
 {
+    public sealed record TriggerRow(string EnabledGlyph, string Pattern, string Action, string ClassName);
+
     private TriggerEngineFinal? _engine;
 
     public TriggersPanel() => InitializeComponent();
@@ -22,20 +24,20 @@ public partial class TriggersPanel : UserControl
     private void Refresh()
     {
         if (_engine is null) return;
+        var keep = (ItemsList.SelectedItem as TriggerRow)?.Pattern;
         ItemsList.ItemsSource = _engine.Triggers
-            .Select(t =>
-            {
-                var cls = string.IsNullOrEmpty(t.ClassName) ? "" : $"  [{t.ClassName}]";
-                return $"{(t.IsEnabled ? "✓" : "✗")}  {t.Pattern}  →  {t.Action}{cls}";
-            })
+            .Select(t => new TriggerRow(t.IsEnabled ? "✓" : "✗", t.Pattern, t.Action, t.ClassName))
             .ToList();
+        if (keep is not null)
+            ItemsList.SelectedItem = ((IEnumerable<TriggerRow>)ItemsList.ItemsSource)
+                .FirstOrDefault(r => r.Pattern == keep);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        var idx = ItemsList.SelectedIndex;
-        if (_engine is null || idx < 0 || idx >= _engine.Triggers.Count) return;
-        var trigger = _engine.Triggers[idx];
+        if (_engine is null || ItemsList.SelectedItem is not TriggerRow row) return;
+        var trigger = _engine.Triggers.FirstOrDefault(t => t.Pattern == row.Pattern);
+        if (trigger is null) return;
         PatternBox.Text              = trigger.Pattern;
         ActionBox.Text               = trigger.Action;
         ClassBox.Text                = trigger.ClassName;
@@ -67,10 +69,8 @@ public partial class TriggersPanel : UserControl
     private void OnDelete(object? sender, RoutedEventArgs e)
     {
         if (_engine is null) return;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0 || idx >= _engine.Triggers.Count) { StatusText.Text = "Select a trigger to delete."; return; }
-        var pattern = _engine.Triggers[idx].Pattern;
-        _engine.RemoveTrigger(pattern);
+        if (ItemsList.SelectedItem is not TriggerRow row) { StatusText.Text = "Select a trigger to delete."; return; }
+        _engine.RemoveTrigger(row.Pattern);
         ClearForm();
         Refresh();
         StatusText.Text = "Deleted.";
@@ -79,9 +79,9 @@ public partial class TriggersPanel : UserControl
     private void OnToggle(object? sender, RoutedEventArgs e)
     {
         if (_engine is null) return;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0 || idx >= _engine.Triggers.Count) { StatusText.Text = "Select a trigger to toggle."; return; }
-        var trigger = _engine.Triggers[idx];
+        if (ItemsList.SelectedItem is not TriggerRow row) { StatusText.Text = "Select a trigger to toggle."; return; }
+        var trigger = _engine.Triggers.FirstOrDefault(t => t.Pattern == row.Pattern);
+        if (trigger is null) return;
         _engine.SetEnabled(trigger.Pattern, !trigger.IsEnabled);
         Refresh();
         StatusText.Text = $"Trigger {(trigger.IsEnabled ? "enabled" : "disabled")}.";
@@ -115,7 +115,7 @@ public partial class TriggersPanel : UserControl
 
     private void ClearForm()
     {
-        ItemsList.SelectedIndex      = -1;
+        ItemsList.SelectedItem       = null;
         PatternBox.Text              = string.Empty;
         ActionBox.Text               = string.Empty;
         ClassBox.Text                = string.Empty;

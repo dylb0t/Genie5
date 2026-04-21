@@ -10,6 +10,10 @@ namespace Genie5.Ui;
 
 public partial class HighlightStringsPanel : UserControl
 {
+    public sealed record HighlightRow(
+        string EnabledGlyph, string MatchType, string ForegroundColor, string BackgroundColor,
+        string Pattern, string ClassName);
+
     private static readonly string[] MatchTypes =
         ["String", "Line", "BeginsWith", "Regex"];
 
@@ -33,21 +37,26 @@ public partial class HighlightStringsPanel : UserControl
     private void Refresh()
     {
         if (_engine is null) return;
+        var keep = (ItemsList.SelectedItem as HighlightRow)?.Pattern;
         ItemsList.ItemsSource = _engine.Rules
-            .Select(r =>
-            {
-                var bg  = string.IsNullOrEmpty(r.BackgroundColor) ? "" : $"/{r.BackgroundColor}";
-                var cls = string.IsNullOrEmpty(r.ClassName) ? "" : $"  [{r.ClassName}]";
-                return $"{(r.IsEnabled ? "✓" : "✗")}  [{r.MatchType}]  [{r.ForegroundColor}{bg}]  {r.Pattern}{cls}";
-            })
+            .Select(r => new HighlightRow(
+                r.IsEnabled ? "✓" : "✗",
+                r.MatchType.ToString(),
+                r.ForegroundColor,
+                r.BackgroundColor,
+                r.Pattern,
+                r.ClassName))
             .ToList();
+        if (keep is not null)
+            ItemsList.SelectedItem = ((IEnumerable<HighlightRow>)ItemsList.ItemsSource)
+                .FirstOrDefault(r => r.Pattern == keep);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        var idx = ItemsList.SelectedIndex;
-        if (_engine is null || idx < 0 || idx >= _engine.Rules.Count) return;
-        var rule = _engine.Rules[idx];
+        if (_engine is null || ItemsList.SelectedItem is not HighlightRow row) return;
+        var rule = _engine.Rules.FirstOrDefault(r => r.Pattern == row.Pattern);
+        if (rule is null) return;
         PatternBox.Text              = rule.Pattern;
         ColorPickerHelpers.LoadColor(FgColorPicker, FgDefaultCheck, rule.ForegroundColor, "Default");
         ColorPickerHelpers.LoadColor(BgColorPicker, BgNoneCheck,    rule.BackgroundColor, "");
@@ -87,9 +96,8 @@ public partial class HighlightStringsPanel : UserControl
     private void OnDelete(object? sender, RoutedEventArgs e)
     {
         if (_engine is null) return;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0 || idx >= _engine.Rules.Count) { StatusText.Text = "Select a highlight to delete."; return; }
-        _engine.RemoveRule(_engine.Rules[idx].Pattern);
+        if (ItemsList.SelectedItem is not HighlightRow row) { StatusText.Text = "Select a highlight to delete."; return; }
+        _engine.RemoveRule(row.Pattern);
         ClearForm();
         Refresh();
         StatusText.Text = "Deleted.";
@@ -98,9 +106,9 @@ public partial class HighlightStringsPanel : UserControl
     private void OnToggle(object? sender, RoutedEventArgs e)
     {
         if (_engine is null) return;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0 || idx >= _engine.Rules.Count) { StatusText.Text = "Select a highlight to toggle."; return; }
-        var rule = _engine.Rules[idx];
+        if (ItemsList.SelectedItem is not HighlightRow row) { StatusText.Text = "Select a highlight to toggle."; return; }
+        var rule = _engine.Rules.FirstOrDefault(r => r.Pattern == row.Pattern);
+        if (rule is null) return;
         rule.IsEnabled = !rule.IsEnabled;
         Refresh();
         StatusText.Text = $"Highlight {(rule.IsEnabled ? "enabled" : "disabled")}.";
@@ -136,7 +144,7 @@ public partial class HighlightStringsPanel : UserControl
 
     private void ClearForm()
     {
-        ItemsList.SelectedIndex      = -1;
+        ItemsList.SelectedItem       = null;
         PatternBox.Text              = string.Empty;
         FgColorPicker.Color          = Colors.Yellow;
         FgDefaultCheck.IsChecked     = false;

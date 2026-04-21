@@ -8,6 +8,8 @@ namespace Genie5.Ui;
 
 public partial class AliasesPanel : UserControl
 {
+    public sealed record AliasRow(string EnabledGlyph, string Name, string Expansion, bool IsEnabled);
+
     private AliasEngine? _engine;
 
     public AliasesPanel() => InitializeComponent();
@@ -21,20 +23,24 @@ public partial class AliasesPanel : UserControl
     private void Refresh()
     {
         if (_engine is null) return;
+        var keep = (ItemsList.SelectedItem as AliasRow)?.Name;
         ItemsList.ItemsSource = _engine.Aliases
-            .Select(a => $"{(a.IsEnabled ? "✓" : "✗")}  {a.Name}  →  {a.Expansion}")
+            .Select(a => new AliasRow(a.IsEnabled ? "✓" : "✗", a.Name, a.Expansion, a.IsEnabled))
             .ToList();
+        if (keep is not null)
+            ItemsList.SelectedItem = ((IEnumerable<AliasRow>)ItemsList.ItemsSource)
+                .FirstOrDefault(r => r.Name == keep);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        var idx = ItemsList.SelectedIndex;
-        if (_engine is null || idx < 0 || idx >= _engine.Aliases.Count) return;
-        var alias = _engine.Aliases[idx];
-        NameBox.Text        = alias.Name;
-        ExpansionBox.Text   = alias.Expansion;
+        if (_engine is null || ItemsList.SelectedItem is not AliasRow row) return;
+        var alias = _engine.Aliases.FirstOrDefault(a => a.Name == row.Name);
+        if (alias is null) return;
+        NameBox.Text           = alias.Name;
+        ExpansionBox.Text      = alias.Expansion;
         EnabledCheck.IsChecked = alias.IsEnabled;
-        StatusText.Text     = string.Empty;
+        StatusText.Text        = string.Empty;
     }
 
     private void OnSave(object? sender, RoutedEventArgs e)
@@ -55,21 +61,19 @@ public partial class AliasesPanel : UserControl
     private void OnDelete(object? sender, RoutedEventArgs e)
     {
         if (_engine is null) return;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0 || idx >= _engine.Aliases.Count) { StatusText.Text = "Select an alias to delete."; return; }
-        var name = _engine.Aliases[idx].Name;
-        _engine.RemoveAlias(name);
+        if (ItemsList.SelectedItem is not AliasRow row) { StatusText.Text = "Select an alias to delete."; return; }
+        _engine.RemoveAlias(row.Name);
         ClearForm();
         Refresh();
-        StatusText.Text = $"Deleted '{name}'.";
+        StatusText.Text = $"Deleted '{row.Name}'.";
     }
 
     private void OnToggle(object? sender, RoutedEventArgs e)
     {
         if (_engine is null) return;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0 || idx >= _engine.Aliases.Count) { StatusText.Text = "Select an alias to toggle."; return; }
-        var alias = _engine.Aliases[idx];
+        if (ItemsList.SelectedItem is not AliasRow row) { StatusText.Text = "Select an alias to toggle."; return; }
+        var alias = _engine.Aliases.FirstOrDefault(a => a.Name == row.Name);
+        if (alias is null) return;
         _engine.SetEnabled(alias.Name, !alias.IsEnabled);
         Refresh();
         StatusText.Text = $"'{alias.Name}' {(alias.IsEnabled ? "enabled" : "disabled")}.";
@@ -81,11 +85,11 @@ public partial class AliasesPanel : UserControl
 
     private void ClearForm()
     {
-        ItemsList.SelectedIndex = -1;
-        NameBox.Text            = string.Empty;
-        ExpansionBox.Text       = string.Empty;
-        EnabledCheck.IsChecked  = true;
-        StatusText.Text         = string.Empty;
+        ItemsList.SelectedItem = null;
+        NameBox.Text           = string.Empty;
+        ExpansionBox.Text      = string.Empty;
+        EnabledCheck.IsChecked = true;
+        StatusText.Text        = string.Empty;
     }
 
     private async void OnImport(object? sender, RoutedEventArgs e)

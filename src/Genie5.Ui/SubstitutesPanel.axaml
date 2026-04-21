@@ -12,10 +12,23 @@
     </StackPanel>
 
     <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="4">
-      <ListBox Name="ItemsList"
-               Grid.Column="0"
-               Margin="0,0,4,0"
-               SelectionChanged="OnSelectionChanged" />
+      <DataGrid Name="ItemsList"
+                Grid.Column="0"
+                Margin="0,0,4,0"
+                IsReadOnly="True"
+                SelectionMode="Single"
+                CanUserSortColumns="True"
+                GridLinesVisibility="Horizontal"
+                HeadersVisibility="Column"
+                x:CompileBindings="False"
+                SelectionChanged="OnSelectionChanged">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="On"          Binding="{Binding EnabledGlyph}" Width="40" />
+          <DataGridTextColumn Header="Pattern"     Binding="{Binding Pattern}"      Width="*" />
+          <DataGridTextColumn Header="Replacement" Binding="{Binding Replacement}"  Width="*" />
+          <DataGridTextColumn Header="Class"       Binding="{Binding ClassName}"    Width="Auto" />
+        </DataGrid.Columns>
+      </DataGrid>
 
       <Grid Grid.Column="1"
             RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"

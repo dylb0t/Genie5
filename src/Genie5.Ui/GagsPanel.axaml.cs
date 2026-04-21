@@ -9,6 +9,8 @@ namespace Genie5.Ui;
 
 public partial class GagsPanel : UserControl
 {
+    public sealed record GagRow(string EnabledGlyph, string Pattern, string ClassName);
+
     private GagEngine? _engine;
     private Action?    _onChanged;
 
@@ -24,20 +26,20 @@ public partial class GagsPanel : UserControl
     private void Refresh()
     {
         if (_engine is null) return;
+        var keep = (ItemsList.SelectedItem as GagRow)?.Pattern;
         ItemsList.ItemsSource = _engine.Rules
-            .Select(r =>
-            {
-                var cls = string.IsNullOrEmpty(r.ClassName) ? "" : $"  [{r.ClassName}]";
-                return $"{(r.IsEnabled ? "✓" : "✗")}  {r.Pattern}{cls}";
-            })
+            .Select(r => new GagRow(r.IsEnabled ? "✓" : "✗", r.Pattern, r.ClassName))
             .ToList();
+        if (keep is not null)
+            ItemsList.SelectedItem = ((IEnumerable<GagRow>)ItemsList.ItemsSource)
+                .FirstOrDefault(r => r.Pattern == keep);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        var idx = ItemsList.SelectedIndex;
-        if (_engine is null || idx < 0 || idx >= _engine.Rules.Count) return;
-        var rule = _engine.Rules[idx];
+        if (_engine is null || ItemsList.SelectedItem is not GagRow row) return;
+        var rule = _engine.Rules.FirstOrDefault(r => r.Pattern == row.Pattern);
+        if (rule is null) return;
         PatternBox.Text              = rule.Pattern;
         ClassBox.Text                = rule.ClassName;
         CaseSensitiveCheck.IsChecked = rule.CaseSensitive;
@@ -68,9 +70,8 @@ public partial class GagsPanel : UserControl
     private void OnDelete(object? sender, RoutedEventArgs e)
     {
         if (_engine is null) return;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0 || idx >= _engine.Rules.Count) { StatusText.Text = "Select a gag to delete."; return; }
-        _engine.RemoveRule(_engine.Rules[idx].Pattern);
+        if (ItemsList.SelectedItem is not GagRow row) { StatusText.Text = "Select a gag to delete."; return; }
+        _engine.RemoveRule(row.Pattern);
         ClearForm();
         Refresh();
         _onChanged?.Invoke();
@@ -80,9 +81,9 @@ public partial class GagsPanel : UserControl
     private void OnToggle(object? sender, RoutedEventArgs e)
     {
         if (_engine is null) return;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0 || idx >= _engine.Rules.Count) { StatusText.Text = "Select a gag to toggle."; return; }
-        var rule = _engine.Rules[idx];
+        if (ItemsList.SelectedItem is not GagRow row) { StatusText.Text = "Select a gag to toggle."; return; }
+        var rule = _engine.Rules.FirstOrDefault(r => r.Pattern == row.Pattern);
+        if (rule is null) return;
         rule.IsEnabled = !rule.IsEnabled;
         Refresh();
         _onChanged?.Invoke();
@@ -118,7 +119,7 @@ public partial class GagsPanel : UserControl
 
     private void ClearForm()
     {
-        ItemsList.SelectedIndex      = -1;
+        ItemsList.SelectedItem       = null;
         PatternBox.Text              = string.Empty;
         ClassBox.Text                = string.Empty;
         CaseSensitiveCheck.IsChecked = false;

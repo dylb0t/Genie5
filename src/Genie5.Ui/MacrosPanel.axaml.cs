@@ -8,6 +8,8 @@ namespace Genie5.Ui;
 
 public partial class MacrosPanel : UserControl
 {
+    public sealed record MacroRow(string Key, string Action);
+
     private MacroEngine? _engine;
     private Action?      _onChanged;
 
@@ -23,20 +25,19 @@ public partial class MacrosPanel : UserControl
     private void Refresh()
     {
         if (_engine is null) return;
+        var keep = (ItemsList.SelectedItem as MacroRow)?.Key;
         ItemsList.ItemsSource = _engine.Rules
-            .OrderBy(r => r.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(r => $"{r.Key}  →  {r.Action}")
+            .Select(r => new MacroRow(r.Key, r.Action))
             .ToList();
+        if (keep is not null)
+            ItemsList.SelectedItem = ((IEnumerable<MacroRow>)ItemsList.ItemsSource)
+                .FirstOrDefault(r => r.Key == keep);
     }
 
     private MacroRule? SelectedRule()
     {
-        if (_engine is null) return null;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0) return null;
-        return _engine.Rules
-            .OrderBy(r => r.Key, StringComparer.OrdinalIgnoreCase)
-            .ElementAtOrDefault(idx);
+        if (_engine is null || ItemsList.SelectedItem is not MacroRow row) return null;
+        return _engine.Rules.FirstOrDefault(r => r.Key == row.Key);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -102,9 +103,9 @@ public partial class MacrosPanel : UserControl
 
     private void ClearForm()
     {
-        ItemsList.SelectedIndex = -1;
-        KeyBox.Text             = string.Empty;
-        ActionBox.Text          = string.Empty;
-        StatusText.Text         = string.Empty;
+        ItemsList.SelectedItem = null;
+        KeyBox.Text            = string.Empty;
+        ActionBox.Text         = string.Empty;
+        StatusText.Text        = string.Empty;
     }
 }

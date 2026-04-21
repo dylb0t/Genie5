@@ -7,6 +7,8 @@ namespace Genie5.Ui;
 
 public partial class PresetsPanel : UserControl
 {
+    public sealed record PresetRow(string Id, string ForegroundColor, string BackgroundColor, string LineGlyph);
+
     private PresetEngine? _engine;
     private Action?       _onChanged;
 
@@ -25,16 +27,23 @@ public partial class PresetsPanel : UserControl
     private void Refresh()
     {
         if (_engine is null) return;
-        PresetList.ItemsSource = _engine.Presets.Keys.OrderBy(k => k).ToList();
+        var keep = (PresetList.SelectedItem as PresetRow)?.Id;
+        PresetList.ItemsSource = _engine.Presets
+            .OrderBy(kv => kv.Key)
+            .Select(kv => new PresetRow(kv.Key, kv.Value.ForegroundColor, kv.Value.BackgroundColor, kv.Value.HighlightLine ? "✓" : ""))
+            .ToList();
+        if (keep is not null)
+            PresetList.SelectedItem = ((IEnumerable<PresetRow>)PresetList.ItemsSource)
+                .FirstOrDefault(r => r.Id == keep);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_engine is null || PresetList.SelectedItem is not string id) return;
-        var rule = _engine.Get(id);
+        if (_engine is null || PresetList.SelectedItem is not PresetRow row) return;
+        var rule = _engine.Get(row.Id);
         if (rule is null) return;
 
-        IdLabel.Text = id;
+        IdLabel.Text = row.Id;
         ColorPickerHelpers.LoadColor(FgColorPicker, FgDefaultCheck, rule.ForegroundColor, "Default");
         ColorPickerHelpers.LoadColor(BgColorPicker, BgNoneCheck,    rule.BackgroundColor, "");
         HighlightLineCheck.IsChecked = rule.HighlightLine;
@@ -44,7 +53,8 @@ public partial class PresetsPanel : UserControl
 
     private void OnApply(object? sender, RoutedEventArgs e)
     {
-        if (_engine is null || PresetList.SelectedItem is not string id) return;
+        if (_engine is null || PresetList.SelectedItem is not PresetRow row) return;
+        var id = row.Id;
 
         var fg = ColorPickerHelpers.ReadColor(FgColorPicker, FgDefaultCheck, "Default");
         var bg = ColorPickerHelpers.ReadColor(BgColorPicker, BgNoneCheck,    "");
@@ -58,13 +68,15 @@ public partial class PresetsPanel : UserControl
         });
 
         UpdatePreview(fg, bg);
+        Refresh();
         _onChanged?.Invoke();
         StatusText.Text = "Applied.";
     }
 
     private void OnReset(object? sender, RoutedEventArgs e)
     {
-        if (_engine is null || PresetList.SelectedItem is not string id) return;
+        if (_engine is null || PresetList.SelectedItem is not PresetRow row) return;
+        var id = row.Id;
 
         var fresh = new PresetEngine();
         var rule  = fresh.Get(id);
@@ -75,6 +87,7 @@ public partial class PresetsPanel : UserControl
         ColorPickerHelpers.LoadColor(BgColorPicker, BgNoneCheck,    rule.BackgroundColor, "");
         HighlightLineCheck.IsChecked = rule.HighlightLine;
         UpdatePreview(rule.ForegroundColor, rule.BackgroundColor);
+        Refresh();
         _onChanged?.Invoke();
         StatusText.Text = "Reset to default.";
     }

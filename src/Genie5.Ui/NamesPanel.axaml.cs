@@ -9,6 +9,8 @@ namespace Genie5.Ui;
 
 public partial class NamesPanel : UserControl
 {
+    public sealed record NameRow(string Name, string ForegroundColor, string BackgroundColor);
+
     private NameHighlightEngine? _engine;
     private Func<string>?         _configPath;
     private Action?               _onChanged;
@@ -31,24 +33,19 @@ public partial class NamesPanel : UserControl
     private void Refresh()
     {
         if (_engine is null) return;
+        var keep = (ItemsList.SelectedItem as NameRow)?.Name;
         ItemsList.ItemsSource = _engine.Rules
-            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(r =>
-            {
-                var bg = string.IsNullOrEmpty(r.BackgroundColor) ? "" : $"/{r.BackgroundColor}";
-                return $"{r.Name}  [{r.ForegroundColor}{bg}]";
-            })
+            .Select(r => new NameRow(r.Name, r.ForegroundColor, r.BackgroundColor))
             .ToList();
+        if (keep is not null)
+            ItemsList.SelectedItem = ((IEnumerable<NameRow>)ItemsList.ItemsSource)
+                .FirstOrDefault(r => r.Name == keep);
     }
 
     private NameRule? SelectedRule()
     {
-        if (_engine is null) return null;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0) return null;
-        return _engine.Rules
-            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
-            .ElementAtOrDefault(idx);
+        if (_engine is null || ItemsList.SelectedItem is not NameRow row) return null;
+        return _engine.Rules.FirstOrDefault(r => r.Name == row.Name);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -100,7 +97,7 @@ public partial class NamesPanel : UserControl
 
     private void ClearForm()
     {
-        ItemsList.SelectedIndex  = -1;
+        ItemsList.SelectedItem   = null;
         NameBox.Text             = string.Empty;
         FgColorPicker.Color      = Colors.Yellow;
         FgDefaultCheck.IsChecked = false;

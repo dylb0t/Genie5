@@ -9,6 +9,8 @@ namespace Genie5.Ui;
 
 public partial class VariablesPanel : UserControl
 {
+    public sealed record VariableRow(string Name, string Value);
+
     private VariableStore? _store;
     private Action?        _onChanged;
 
@@ -24,23 +26,21 @@ public partial class VariablesPanel : UserControl
     private void Refresh()
     {
         if (_store is null) return;
+        var keep = (ItemsList.SelectedItem as VariableRow)?.Name;
         ItemsList.ItemsSource = _store.GetAll().Values
             .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(v => $"{v.Name} = {v.Value}")
+            .Select(v => new VariableRow(v.Name, v.Value))
             .ToList();
+        if (keep is not null)
+            ItemsList.SelectedItem = ((IEnumerable<VariableRow>)ItemsList.ItemsSource)
+                .FirstOrDefault(r => r.Name == keep);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        var idx = ItemsList.SelectedIndex;
-        if (_store is null || idx < 0) return;
-        var ordered = _store.GetAll().Values
-            .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        if (idx >= ordered.Count) return;
-        var v = ordered[idx];
-        NameBox.Text    = v.Name;
-        ValueBox.Text   = v.Value;
+        if (_store is null || ItemsList.SelectedItem is not VariableRow row) return;
+        NameBox.Text    = row.Name;
+        ValueBox.Text   = row.Value;
         StatusText.Text = string.Empty;
     }
 
@@ -61,22 +61,16 @@ public partial class VariablesPanel : UserControl
     private void OnDelete(object? sender, RoutedEventArgs e)
     {
         if (_store is null) return;
-        var idx = ItemsList.SelectedIndex;
-        if (idx < 0)
+        if (ItemsList.SelectedItem is not VariableRow row)
         {
             StatusText.Text = "Select a variable to delete.";
             return;
         }
-        var ordered = _store.GetAll().Values
-            .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        if (idx >= ordered.Count) return;
-        var name = ordered[idx].Name;
-        _store.Remove(name);
+        _store.Remove(row.Name);
         _onChanged?.Invoke();
         ClearForm();
         Refresh();
-        StatusText.Text = $"Deleted '{name}'.";
+        StatusText.Text = $"Deleted '{row.Name}'.";
     }
 
     private void OnAdd(object? sender, RoutedEventArgs e) => ClearForm();
@@ -85,10 +79,10 @@ public partial class VariablesPanel : UserControl
 
     private void ClearForm()
     {
-        ItemsList.SelectedIndex = -1;
-        NameBox.Text            = string.Empty;
-        ValueBox.Text           = string.Empty;
-        StatusText.Text         = string.Empty;
+        ItemsList.SelectedItem = null;
+        NameBox.Text           = string.Empty;
+        ValueBox.Text          = string.Empty;
+        StatusText.Text        = string.Empty;
     }
 
     private async void OnImport(object? sender, RoutedEventArgs e)

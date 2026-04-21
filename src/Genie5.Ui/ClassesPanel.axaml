@@ -13,10 +13,21 @@
     </StackPanel>
 
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="4">
-      <ListBox Name="ItemsList"
-               Grid.Column="0"
-               Margin="0,0,4,0"
-               SelectionChanged="OnSelectionChanged" />
+      <DataGrid Name="ItemsList"
+                Grid.Column="0"
+                Margin="0,0,4,0"
+                IsReadOnly="True"
+                SelectionMode="Single"
+                CanUserSortColumns="True"
+                GridLinesVisibility="Horizontal"
+                HeadersVisibility="Column"
+                x:CompileBindings="False"
+                SelectionChanged="OnSelectionChanged">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="On"   Binding="{Binding EnabledGlyph}" Width="40" />
+          <DataGridTextColumn Header="Name" Binding="{Binding Name}"         Width="*" />
+        </DataGrid.Columns>
+      </DataGrid>
 
       <StackPanel Grid.Column="1" Orientation="Vertical" Spacing="4" Width="220">
         <TextBlock Text="Class name:" />
