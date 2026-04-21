@@ -1,10 +1,13 @@
 using System;
 using Genie4.Core.Aliases;
+using Genie4.Core.Classes;
 using Genie4.Core.Commanding;
 using Genie4.Core.Config;
+using Genie4.Core.Gags;
 using Genie4.Core.Gsl;
 using Genie4.Core.Highlights;
 using Genie4.Core.Layout;
+using Genie4.Core.Macros;
 using Genie4.Core.Mapper;
 using Genie4.Core.Networking;
 using Genie4.Core.Persistence;
@@ -12,6 +15,7 @@ using Genie4.Core.Profiles;
 using Genie4.Core.Queue;
 using Genie4.Core.Runtime;
 using Genie4.Core.Scripting;
+using Genie4.Core.Substitutes;
 using Genie4.Core.Triggers;
 using Genie4.Core.Variables;
 
@@ -25,6 +29,11 @@ public partial class MainWindow
     private AliasEngine _aliases = null!;
     private VariableEngine _variables = null!;
     internal HighlightEngine _highlights = null!;
+    internal NameHighlightEngine _nameHighlights = null!;
+    internal SubstituteEngine _substitutes = null!;
+    internal GagEngine        _gags        = null!;
+    internal MacroEngine      _macros      = null!;
+    internal ClassEngine      _classes     = null!;
     internal Genie4.Core.Presets.PresetEngine _presets = null!;
     internal GslParser    _gslParser    = null!;
     internal readonly GslGameState _gslGameState = new();
@@ -141,9 +150,21 @@ public partial class MainWindow
         _triggers   = new TriggerEngineFinal(new UiHost(this), _engine);
         _aliases    = new AliasEngine(_engine);
         _variables  = new VariableEngine(_engine);
-        _highlights = new HighlightEngine();
-        _presets    = new Genie4.Core.Presets.PresetEngine();
+        _highlights     = new HighlightEngine();
+        _nameHighlights = new NameHighlightEngine();
+        _substitutes    = new SubstituteEngine();
+        _gags           = new GagEngine();
+        _macros         = new MacroEngine();
+        _classes        = new ClassEngine();
+        _presets        = new Genie4.Core.Presets.PresetEngine();
         _gslParser  = new GslParser(_presets);
+
+        // Hook the class gate into every rule engine that supports it so
+        // inactive classes suppress matches across the board.
+        _triggers.Classes    = _classes;
+        _highlights.Classes  = _classes;
+        _substitutes.Classes = _classes;
+        _gags.Classes        = _classes;
 
         LoadData();
 
@@ -437,11 +458,17 @@ public partial class MainWindow
     internal void LoadData()
     {
         _profiles.Load(ProfilesPath);
+
+        // Classes first so Ensure() calls from rule loaders below don't clobber
+        // persisted active/inactive state.
+        foreach (var m in _persistence.LoadClasses(ConfigPath("classes.json")))
+            _classes.Set(m.Name, m.IsActive);
+
         foreach (var m in _persistence.LoadAliases(ConfigPath("aliases.json")))
             _aliases.AddAlias(m.Name, m.Expansion, m.IsEnabled);
 
         foreach (var m in _persistence.LoadTriggers(ConfigPath("triggers.json")))
-            _triggers.AddTrigger(m.Pattern, m.Action, m.CaseSensitive, m.IsEnabled);
+            _triggers.AddTrigger(m.Pattern, m.Action, m.CaseSensitive, m.IsEnabled, m.ClassName);
 
         foreach (var m in _persistence.LoadHighlights(ConfigPath("highlights.json")))
         {
@@ -453,8 +480,20 @@ public partial class MainWindow
                 matchType = m.IsRegex ? HighlightMatchType.Regex : HighlightMatchType.String;
 
             _highlights.AddRule(m.Pattern, m.ForegroundColor, m.BackgroundColor,
-                                matchType, m.CaseSensitive, m.IsEnabled);
+                                matchType, m.CaseSensitive, m.IsEnabled, m.ClassName);
         }
+
+        foreach (var m in _persistence.LoadNames(ConfigPath("names.json")))
+            _nameHighlights.Add(m.Name, m.ForegroundColor, m.BackgroundColor);
+
+        foreach (var m in _persistence.LoadSubstitutes(ConfigPath("substitutes.json")))
+            _substitutes.AddRule(m.Pattern, m.Replacement, m.CaseSensitive, m.IsEnabled, m.ClassName);
+
+        foreach (var m in _persistence.LoadGags(ConfigPath("gags.json")))
+            _gags.AddRule(m.Pattern, m.CaseSensitive, m.IsEnabled, m.ClassName);
+
+        foreach (var m in _persistence.LoadMacros(ConfigPath("macros.json")))
+            _macros.Add(m.Key, m.Action);
 
         foreach (var m in _persistence.LoadPresets(ConfigPath("presets.json")))
             _presets.Apply(new Genie4.Core.Presets.PresetRule
@@ -474,6 +513,11 @@ public partial class MainWindow
         _persistence.SaveAliases(ConfigPath("aliases.json"), _aliases.Aliases);
         _persistence.SaveTriggers(ConfigPath("triggers.json"), _triggers.Triggers);
         _persistence.SaveHighlights(ConfigPath("highlights.json"), _highlights.Rules);
+        _persistence.SaveNames(ConfigPath("names.json"), _nameHighlights.Rules);
+        _persistence.SaveSubstitutes(ConfigPath("substitutes.json"), _substitutes.Rules);
+        _persistence.SaveGags(ConfigPath("gags.json"), _gags.Rules);
+        _persistence.SaveMacros(ConfigPath("macros.json"), _macros.Rules);
+        _persistence.SaveClasses(ConfigPath("classes.json"), _classes);
         _persistence.SavePresets(ConfigPath("presets.json"), _presets);
         _persistence.SaveVariables(ConfigPath("variables.json"), _variables.Store);
         _persistence.SaveWindowSettings(ConfigPath("window_settings.json"), _windowSettings);

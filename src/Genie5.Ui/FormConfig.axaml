@@ -22,8 +22,20 @@
         <local:HighlightsPanel Name="HighlightsPanelCtrl" />
       </TabItem>
 
-      <TabItem Header="Presets">
-        <local:PresetsPanel Name="PresetsPanelCtrl" />
+      <TabItem Header="Substitutes">
+        <local:SubstitutesPanel Name="SubstitutesPanelCtrl" />
+      </TabItem>
+
+      <TabItem Header="Gags">
+        <local:GagsPanel Name="GagsPanelCtrl" />
+      </TabItem>
+
+      <TabItem Header="Macros">
+        <local:MacrosPanel Name="MacrosPanelCtrl" />
+      </TabItem>
+
+      <TabItem Header="Classes">
+        <local:ClassesPanel Name="ClassesPanelCtrl" />
       </TabItem>
 
       <TabItem Header="Variables">

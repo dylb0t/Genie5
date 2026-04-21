@@ -1,35 +1,18 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Genie4.Core.Layout;
 
 namespace Genie5.Ui;
 
 public partial class LayoutPanel : UserControl
 {
-    private static readonly string[] FgColors =
-    [
-        "Default", "LightGray", "White", "WhiteSmoke",
-        "Yellow", "Khaki", "Red", "IndianRed",
-        "Green", "LightGreen", "Cyan", "PaleTurquoise",
-        "Blue", "CornflowerBlue", "Magenta", "Orchid",
-        "Silver", "Gray", "Black",
-    ];
-
-    private static readonly string[] BgColors =
-    [
-        "(none)", "Black", "DimGray", "Navy", "DarkRed", "DarkGreen",
-        "DarkCyan", "DarkMagenta", "DarkBlue", "Maroon", "DarkSlateGray",
-        "MidnightBlue", "DarkOliveGreen",
-    ];
-
     private WindowSettingsStore? _store;
     private WindowSettings? _current;
 
     public LayoutPanel()
     {
         InitializeComponent();
-        FgColorBox.ItemsSource = FgColors;
-        BgColorBox.ItemsSource = BgColors;
     }
 
     public void Initialize(WindowSettingsStore store)
@@ -58,9 +41,8 @@ public partial class LayoutPanel : UserControl
         TitleBox.Text             = s.DisplayTitle;
         FontFamilyBox.Text        = s.FontFamily;
         FontSizeBox.Text          = s.FontSize.ToString("G");
-        FgColorBox.SelectedItem   = FgColors.Contains(s.Foreground) ? s.Foreground : "Default";
-        BgColorBox.SelectedItem   = string.IsNullOrEmpty(s.Background) ? "(none)"
-                                    : BgColors.Contains(s.Background) ? s.Background : "(none)";
+        ColorPickerHelpers.LoadColor(FgColorPicker, FgDefaultCheck, s.Foreground, "Default");
+        ColorPickerHelpers.LoadColor(BgColorPicker, BgNoneCheck,    s.Background, "");
         TimestampCheck.IsChecked  = s.Timestamp;
     }
 
@@ -71,9 +53,8 @@ public partial class LayoutPanel : UserControl
         var title     = TitleBox.Text?.Trim() ?? string.Empty;
         var fontFam   = FontFamilyBox.Text?.Trim() ?? string.Empty;
         var fontSzTxt = FontSizeBox.Text?.Trim() ?? string.Empty;
-        var fg        = FgColorBox.SelectedItem as string ?? "Default";
-        var bgRaw     = BgColorBox.SelectedItem as string ?? "(none)";
-        var bg        = bgRaw == "(none)" ? string.Empty : bgRaw;
+        var fg        = ColorPickerHelpers.ReadColor(FgColorPicker, FgDefaultCheck, "Default");
+        var bg        = ColorPickerHelpers.ReadColor(BgColorPicker, BgNoneCheck,    "");
         var ts        = TimestampCheck.IsChecked == true;
 
         if (!double.TryParse(fontSzTxt, out double fontSize) || fontSize < 6 || fontSize > 72)

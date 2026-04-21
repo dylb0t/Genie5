@@ -1,0 +1,188 @@
+using System.Text.RegularExpressions;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.VisualTree;
+using Genie4.Core.Highlights;
+
+namespace Genie5.Ui;
+
+public partial class NamesPanel : UserControl
+{
+    private NameHighlightEngine? _engine;
+    private Func<string>?         _configPath;
+    private Action?               _onChanged;
+
+    public NamesPanel()
+    {
+        InitializeComponent();
+        FgColorPicker.Color   = Colors.Yellow;
+        BgNoneCheck.IsChecked = true;
+    }
+
+    public void Initialize(NameHighlightEngine engine, Func<string> configPath, Action? onChanged = null)
+    {
+        _engine     = engine;
+        _configPath = configPath;
+        _onChanged  = onChanged;
+        Refresh();
+    }
+
+    private void Refresh()
+    {
+        if (_engine is null) return;
+        ItemsList.ItemsSource = _engine.Rules
+            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(r =>
+            {
+                var bg = string.IsNullOrEmpty(r.BackgroundColor) ? "" : $"/{r.BackgroundColor}";
+                return $"{r.Name}  [{r.ForegroundColor}{bg}]";
+            })
+            .ToList();
+    }
+
+    private NameRule? SelectedRule()
+    {
+        if (_engine is null) return null;
+        var idx = ItemsList.SelectedIndex;
+        if (idx < 0) return null;
+        return _engine.Rules
+            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ElementAtOrDefault(idx);
+    }
+
+    private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        var rule = SelectedRule();
+        if (rule is null) return;
+        NameBox.Text = rule.Name;
+        ColorPickerHelpers.LoadColor(FgColorPicker, FgDefaultCheck, rule.ForegroundColor, "Default");
+        ColorPickerHelpers.LoadColor(BgColorPicker, BgNoneCheck,    rule.BackgroundColor, "");
+        StatusText.Text = string.Empty;
+    }
+
+    private void OnRefresh(object? sender, RoutedEventArgs e)
+    {
+        Refresh();
+        StatusText.Text = "Refreshed.";
+    }
+
+    private void OnAdd(object? sender, RoutedEventArgs e) => ClearForm();
+
+    private void OnSaveRule(object? sender, RoutedEventArgs e)
+    {
+        if (_engine is null) return;
+        var name = NameBox.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(name)) { StatusText.Text = "Name is required."; return; }
+
+        var fg = ColorPickerHelpers.ReadColor(FgColorPicker, FgDefaultCheck, "Default");
+        var bg = ColorPickerHelpers.ReadColor(BgColorPicker, BgNoneCheck,    "");
+
+        _engine.Add(name, fg, bg);
+        Refresh();
+        _onChanged?.Invoke();
+        StatusText.Text = $"Saved '{name}'.";
+    }
+
+    private void OnRemove(object? sender, RoutedEventArgs e)
+    {
+        if (_engine is null) return;
+        var rule = SelectedRule();
+        if (rule is null) { StatusText.Text = "Select a name to remove."; return; }
+        _engine.Remove(rule.Name);
+        ClearForm();
+        Refresh();
+        _onChanged?.Invoke();
+        StatusText.Text = $"Removed '{rule.Name}'.";
+    }
+
+    private void OnClear(object? sender, RoutedEventArgs e) => ClearForm();
+
+    private void ClearForm()
+    {
+        ItemsList.SelectedIndex  = -1;
+        NameBox.Text             = string.Empty;
+        FgColorPicker.Color      = Colors.Yellow;
+        FgDefaultCheck.IsChecked = false;
+        BgNoneCheck.IsChecked    = true;
+        StatusText.Text          = string.Empty;
+    }
+
+    private void OnLoad(object? sender, RoutedEventArgs e)
+    {
+        if (_engine is null || _configPath is null) return;
+        var path = _configPath();
+        _onChanged?.Invoke();
+        Refresh();
+        StatusText.Text = File.Exists(path)
+            ? $"Loaded {_engine.Rules.Count} name(s)."
+            : "No saved names to load.";
+    }
+
+    private void OnSave(object? sender, RoutedEventArgs e)
+    {
+        _onChanged?.Invoke();
+        StatusText.Text = "Saved.";
+    }
+
+    private async void OnImport(object? sender, RoutedEventArgs e)
+    {
+        if (_engine is null) return;
+
+        var parent = this.GetVisualRoot() as Window;
+        if (parent is null) return;
+
+        var dialog = new OpenFileDialog
+        {
+            Title         = "Import Names",
+            AllowMultiple = false,
+            Filters       = [new FileDialogFilter { Name = "Name files", Extensions = ["cfg", "txt"] }],
+        };
+
+        var paths = await dialog.ShowAsync(parent);
+        if (paths is null || paths.Length == 0) return;
+
+        var (imported, skipped) = ImportFromCfg(paths[0], _engine);
+        Refresh();
+        _onChanged?.Invoke();
+        StatusText.Text = skipped > 0
+            ? $"Imported {imported} name(s), skipped {skipped}."
+            : $"Imported {imported} name(s).";
+    }
+
+    // Parses Genie4-style "#name {color[, bgcolor]} {name}" lines. Class/sound
+    // trailing tokens are tolerated and ignored.
+    internal static (int Imported, int Skipped) ImportFromCfg(string path, NameHighlightEngine engine)
+    {
+        var pattern = new Regex(
+            @"^\s*#name\s+\{(?<colors>[^{}]*)\}\s+\{(?<name>[^{}]*)\}(?:\s+\{[^{}]*\}){0,2}\s*$",
+            RegexOptions.IgnoreCase);
+
+        int imported = 0, skipped = 0;
+        foreach (var raw in File.ReadAllLines(path))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith("//") || line.StartsWith("#!")) continue;
+            if (!line.StartsWith("#name", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var m = pattern.Match(line);
+            if (!m.Success) { skipped++; continue; }
+
+            var (fg, bg) = ParseColors(m.Groups["colors"].Value);
+            var name = m.Groups["name"].Value.Trim();
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(fg)) { skipped++; continue; }
+
+            engine.Add(name, fg, bg);
+            imported++;
+        }
+        return (imported, skipped);
+    }
+
+    private static (string Fg, string Bg) ParseColors(string raw)
+    {
+        var parts = raw.Split(',', 2);
+        var fg = parts[0].Trim();
+        var bg = parts.Length > 1 ? parts[1].Trim() : string.Empty;
+        return (fg, bg);
+    }
+}

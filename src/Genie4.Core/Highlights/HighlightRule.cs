@@ -20,7 +20,8 @@ public sealed class HighlightRule
 
     public HighlightRule(string pattern, string foregroundColor, string backgroundColor = "",
                          HighlightMatchType matchType = HighlightMatchType.String,
-                         bool caseSensitive = false, bool isEnabled = true)
+                         bool caseSensitive = false, bool isEnabled = true,
+                         string className = "")
     {
         Pattern = pattern;
         ForegroundColor = foregroundColor;
@@ -28,6 +29,7 @@ public sealed class HighlightRule
         MatchType = matchType;
         CaseSensitive = caseSensitive;
         IsEnabled = isEnabled;
+        ClassName = className;
         RebuildRegex();
     }
 
@@ -37,6 +39,7 @@ public sealed class HighlightRule
     public HighlightMatchType MatchType { get; }
     public bool CaseSensitive { get; }
     public bool IsEnabled { get; set; }
+    public string ClassName { get; set; }
 
     public bool Matches(string line)
     {

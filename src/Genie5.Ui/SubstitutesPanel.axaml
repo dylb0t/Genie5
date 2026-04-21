@@ -1,6 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="Genie5.Ui.TriggersPanel">
+             x:Class="Genie5.Ui.SubstitutesPanel">
 
   <Grid RowDefinitions="Auto,*">
 
@@ -18,21 +18,26 @@
                SelectionChanged="OnSelectionChanged" />
 
       <Grid Grid.Column="1"
-            RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+            RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
             Margin="4,0,0,0">
         <TextBlock Grid.Row="0" Text="Pattern (regex):" Margin="0,0,0,2" />
         <TextBox   Grid.Row="1" Name="PatternBox" Margin="0,0,0,8" />
-        <TextBlock Grid.Row="2" Text="Action:" Margin="0,0,0,2" />
-        <TextBox   Grid.Row="3" Name="ActionBox" Margin="0,0,0,8" />
+
+        <TextBlock Grid.Row="2" Text="Replacement:" Margin="0,0,0,2" />
+        <TextBox   Grid.Row="3" Name="ReplacementBox" Margin="0,0,0,8" />
+
         <TextBlock Grid.Row="4" Text="Class (optional):" Margin="0,0,0,2" />
         <TextBox   Grid.Row="5" Name="ClassBox" Margin="0,0,0,8" />
+
         <CheckBox  Grid.Row="6" Name="CaseSensitiveCheck" Content="Case sensitive" Margin="0,0,0,4" />
-        <CheckBox  Grid.Row="7" Name="EnabledCheck" Content="Enabled" Margin="0,0,0,8" IsChecked="True" />
-        <StackPanel Grid.Row="8" Orientation="Horizontal" Spacing="4">
+        <StackPanel Grid.Row="7" Orientation="Horizontal" Spacing="4">
+          <CheckBox Name="EnabledCheck" Content="Enabled" IsChecked="True" />
           <Button Content="Save"  Click="OnSave" />
           <Button Content="Clear" Click="OnClear" />
         </StackPanel>
-        <TextBlock Grid.Row="9" Name="StatusText" Margin="0,6,0,0" Foreground="Gray" FontStyle="Italic" />
+
+        <TextBlock Grid.Row="8" Name="StatusText" Margin="0,6,0,0"
+                   Foreground="Gray" FontStyle="Italic" />
       </Grid>
     </Grid>
 

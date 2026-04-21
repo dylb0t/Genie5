@@ -2,30 +2,32 @@ using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
-using Genie4.Core.Triggers;
+using Genie4.Core.Gags;
 
 namespace Genie5.Ui;
 
-public partial class TriggersPanel : UserControl
+public partial class GagsPanel : UserControl
 {
-    private TriggerEngineFinal? _engine;
+    private GagEngine? _engine;
+    private Action?    _onChanged;
 
-    public TriggersPanel() => InitializeComponent();
+    public GagsPanel() => InitializeComponent();
 
-    public void Initialize(TriggerEngineFinal engine)
+    public void Initialize(GagEngine engine, Action? onChanged = null)
     {
-        _engine = engine;
+        _engine    = engine;
+        _onChanged = onChanged;
         Refresh();
     }
 
     private void Refresh()
     {
         if (_engine is null) return;
-        ItemsList.ItemsSource = _engine.Triggers
-            .Select(t =>
+        ItemsList.ItemsSource = _engine.Rules
+            .Select(r =>
             {
-                var cls = string.IsNullOrEmpty(t.ClassName) ? "" : $"  [{t.ClassName}]";
-                return $"{(t.IsEnabled ? "✓" : "✗")}  {t.Pattern}  →  {t.Action}{cls}";
+                var cls = string.IsNullOrEmpty(r.ClassName) ? "" : $"  [{r.ClassName}]";
+                return $"{(r.IsEnabled ? "✓" : "✗")}  {r.Pattern}{cls}";
             })
             .ToList();
     }
@@ -33,13 +35,12 @@ public partial class TriggersPanel : UserControl
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         var idx = ItemsList.SelectedIndex;
-        if (_engine is null || idx < 0 || idx >= _engine.Triggers.Count) return;
-        var trigger = _engine.Triggers[idx];
-        PatternBox.Text              = trigger.Pattern;
-        ActionBox.Text               = trigger.Action;
-        ClassBox.Text                = trigger.ClassName;
-        CaseSensitiveCheck.IsChecked = trigger.CaseSensitive;
-        EnabledCheck.IsChecked       = trigger.IsEnabled;
+        if (_engine is null || idx < 0 || idx >= _engine.Rules.Count) return;
+        var rule = _engine.Rules[idx];
+        PatternBox.Text              = rule.Pattern;
+        ClassBox.Text                = rule.ClassName;
+        CaseSensitiveCheck.IsChecked = rule.CaseSensitive;
+        EnabledCheck.IsChecked       = rule.IsEnabled;
         StatusText.Text              = string.Empty;
     }
 
@@ -47,7 +48,6 @@ public partial class TriggersPanel : UserControl
     {
         if (_engine is null) return;
         var pattern       = PatternBox.Text?.Trim() ?? string.Empty;
-        var action        = ActionBox.Text?.Trim() ?? string.Empty;
         var className     = ClassBox.Text?.Trim() ?? string.Empty;
         var caseSensitive = CaseSensitiveCheck.IsChecked == true;
         var enabled       = EnabledCheck.IsChecked == true;
@@ -57,9 +57,10 @@ public partial class TriggersPanel : UserControl
         try { _ = new Regex(pattern); }
         catch (RegexParseException ex) { StatusText.Text = $"Invalid regex: {ex.Message}"; return; }
 
-        _engine.RemoveTrigger(pattern);
-        _engine.AddTrigger(pattern, action, caseSensitive, enabled, className);
+        _engine.RemoveRule(pattern);
+        _engine.AddRule(pattern, caseSensitive, enabled, className);
         Refresh();
+        _onChanged?.Invoke();
         StatusText.Text = "Saved.";
     }
 
@@ -67,11 +68,11 @@ public partial class TriggersPanel : UserControl
     {
         if (_engine is null) return;
         var idx = ItemsList.SelectedIndex;
-        if (idx < 0 || idx >= _engine.Triggers.Count) { StatusText.Text = "Select a trigger to delete."; return; }
-        var pattern = _engine.Triggers[idx].Pattern;
-        _engine.RemoveTrigger(pattern);
+        if (idx < 0 || idx >= _engine.Rules.Count) { StatusText.Text = "Select a gag to delete."; return; }
+        _engine.RemoveRule(_engine.Rules[idx].Pattern);
         ClearForm();
         Refresh();
+        _onChanged?.Invoke();
         StatusText.Text = "Deleted.";
     }
 
@@ -79,11 +80,12 @@ public partial class TriggersPanel : UserControl
     {
         if (_engine is null) return;
         var idx = ItemsList.SelectedIndex;
-        if (idx < 0 || idx >= _engine.Triggers.Count) { StatusText.Text = "Select a trigger to toggle."; return; }
-        var trigger = _engine.Triggers[idx];
-        _engine.SetEnabled(trigger.Pattern, !trigger.IsEnabled);
+        if (idx < 0 || idx >= _engine.Rules.Count) { StatusText.Text = "Select a gag to toggle."; return; }
+        var rule = _engine.Rules[idx];
+        rule.IsEnabled = !rule.IsEnabled;
         Refresh();
-        StatusText.Text = $"Trigger {(trigger.IsEnabled ? "enabled" : "disabled")}.";
+        _onChanged?.Invoke();
+        StatusText.Text = $"Gag {(rule.IsEnabled ? "enabled" : "disabled")}.";
     }
 
     private void OnAdd(object? sender, RoutedEventArgs e)   => ClearForm();
@@ -97,9 +99,9 @@ public partial class TriggersPanel : UserControl
 
         var dialog = new OpenFileDialog
         {
-            Title         = "Import Triggers",
+            Title         = "Import Gags",
             AllowMultiple = false,
-            Filters       = [new FileDialogFilter { Name = "Trigger files", Extensions = ["cfg", "txt"] }],
+            Filters       = [new FileDialogFilter { Name = "Gag files", Extensions = ["cfg", "txt"] }],
         };
 
         var paths = await dialog.ShowAsync(parent);
@@ -107,18 +109,18 @@ public partial class TriggersPanel : UserControl
 
         var (imported, skipped) = ImportFromCfg(paths[0], _engine);
         Refresh();
+        _onChanged?.Invoke();
         StatusText.Text = skipped > 0
-            ? $"Imported {imported} trigger(s), skipped {skipped}."
-            : $"Imported {imported} trigger(s).";
+            ? $"Imported {imported} gag(s), skipped {skipped}."
+            : $"Imported {imported} gag(s).";
     }
 
-    // Parses Genie4 "#trigger {pattern} {action} [{class}]" lines. Honours
-    // /pattern/i ignore-case suffix and e/pattern/ eval-trigger prefix (eval
-    // triggers are imported as regex triggers — eval semantics unsupported).
-    internal static (int Imported, int Skipped) ImportFromCfg(string path, TriggerEngineFinal engine)
+    // Parses Genie4 "#gag {pattern} [{class}]" lines with optional /pattern/i
+    // ignore-case suffix.
+    internal static (int Imported, int Skipped) ImportFromCfg(string path, GagEngine engine)
     {
         var pattern = new Regex(
-            @"^\s*#trigger\s+\{(?<pat>[^{}]*)\}\s+\{(?<action>[^{}]*)\}(?:\s+\{(?<cls>[^{}]*)\})?\s*$",
+            @"^\s*#gag\s+\{(?<pat>[^{}]*)\}(?:\s+\{(?<cls>[^{}]*)\})?\s*$",
             RegexOptions.IgnoreCase);
 
         int imported = 0, skipped = 0;
@@ -126,31 +128,25 @@ public partial class TriggersPanel : UserControl
         {
             var line = raw.Trim();
             if (line.Length == 0 || line.StartsWith("//") || line.StartsWith("#!")) continue;
-            if (!line.StartsWith("#trigger", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!line.StartsWith("#gag", StringComparison.OrdinalIgnoreCase)) continue;
 
             var m = pattern.Match(line);
             if (!m.Success) { skipped++; continue; }
 
             var pat = m.Groups["pat"].Value;
             bool caseInsensitive = false;
-            if (pat.StartsWith("e/", StringComparison.OrdinalIgnoreCase) && pat.EndsWith('/'))
-                pat = pat[2..^1];
-            else
-            {
-                if (pat.StartsWith('/')) pat = pat[1..];
-                if (pat.EndsWith("/i", StringComparison.OrdinalIgnoreCase)) { caseInsensitive = true; pat = pat[..^2]; }
-                else if (pat.EndsWith('/')) pat = pat[..^1];
-            }
+            if (pat.StartsWith('/')) pat = pat[1..];
+            if (pat.EndsWith("/i", StringComparison.OrdinalIgnoreCase)) { caseInsensitive = true; pat = pat[..^2]; }
+            else if (pat.EndsWith('/')) pat = pat[..^1];
 
             if (string.IsNullOrEmpty(pat)) { skipped++; continue; }
             try { _ = new Regex(pat); }
             catch (RegexParseException) { skipped++; continue; }
 
-            var action = m.Groups["action"].Value;
-            var cls    = m.Groups["cls"].Success ? m.Groups["cls"].Value : string.Empty;
+            var cls = m.Groups["cls"].Success ? m.Groups["cls"].Value : string.Empty;
 
-            engine.RemoveTrigger(pat);
-            engine.AddTrigger(pat, action, caseSensitive: !caseInsensitive, isEnabled: true, className: cls);
+            engine.RemoveRule(pat);
+            engine.AddRule(pat, caseSensitive: !caseInsensitive, isEnabled: true, className: cls);
             imported++;
         }
         return (imported, skipped);
@@ -160,7 +156,6 @@ public partial class TriggersPanel : UserControl
     {
         ItemsList.SelectedIndex      = -1;
         PatternBox.Text              = string.Empty;
-        ActionBox.Text               = string.Empty;
         ClassBox.Text                = string.Empty;
         CaseSensitiveCheck.IsChecked = false;
         EnabledCheck.IsChecked       = true;

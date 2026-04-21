@@ -1,8 +1,12 @@
 using System.Text.Json;
 using Genie4.Core.Aliases;
+using Genie4.Core.Classes;
+using Genie4.Core.Gags;
 using Genie4.Core.Highlights;
 using Genie4.Core.Layout;
+using Genie4.Core.Macros;
 using Genie4.Core.Presets;
+using Genie4.Core.Substitutes;
 using Genie4.Core.Triggers;
 using Genie4.Core.Variables;
 
@@ -40,7 +44,8 @@ public sealed class PersistenceService
             Pattern = t.Pattern,
             Action = t.Action,
             CaseSensitive = t.CaseSensitive,
-            IsEnabled = t.IsEnabled
+            IsEnabled = t.IsEnabled,
+            ClassName = t.ClassName,
         });
 
         File.WriteAllText(path, JsonSerializer.Serialize(data, _options));
@@ -79,15 +84,105 @@ public sealed class PersistenceService
             BackgroundColor = r.BackgroundColor,
             MatchType = r.MatchType.ToString(),
             CaseSensitive = r.CaseSensitive,
-            IsEnabled = r.IsEnabled
+            IsEnabled = r.IsEnabled,
+            ClassName = r.ClassName,
         });
         File.WriteAllText(path, JsonSerializer.Serialize(data, _options));
+    }
+
+    public void SaveClasses(string path, ClassEngine engine)
+    {
+        var data = engine.GetAll()
+            .Where(kv => !kv.Key.Equals("default", StringComparison.OrdinalIgnoreCase))
+            .Select(kv => new ClassPersistenceModel { Name = kv.Key, IsActive = kv.Value });
+        File.WriteAllText(path, JsonSerializer.Serialize(data, _options));
+    }
+
+    public List<ClassPersistenceModel> LoadClasses(string path)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<List<ClassPersistenceModel>>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
     }
 
     public List<HighlightPersistenceModel> LoadHighlights(string path)
     {
         if (!File.Exists(path)) return new();
         return JsonSerializer.Deserialize<List<HighlightPersistenceModel>>(File.ReadAllText(path)) ?? new();
+    }
+
+    public void SaveNames(string path, IEnumerable<NameRule> rules)
+    {
+        var data = rules.Select(r => new NamePersistenceModel
+        {
+            Name            = r.Name,
+            ForegroundColor = r.ForegroundColor,
+            BackgroundColor = r.BackgroundColor,
+        });
+        File.WriteAllText(path, JsonSerializer.Serialize(data, _options));
+    }
+
+    public List<NamePersistenceModel> LoadNames(string path)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<List<NamePersistenceModel>>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
+    }
+
+    public void SaveSubstitutes(string path, IEnumerable<SubstituteRule> rules)
+    {
+        var data = rules.Select(r => new SubstitutePersistenceModel
+        {
+            Pattern       = r.Pattern,
+            Replacement   = r.Replacement,
+            CaseSensitive = r.CaseSensitive,
+            IsEnabled     = r.IsEnabled,
+            ClassName     = r.ClassName,
+        });
+        File.WriteAllText(path, JsonSerializer.Serialize(data, _options));
+    }
+
+    public List<SubstitutePersistenceModel> LoadSubstitutes(string path)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<List<SubstitutePersistenceModel>>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
+    }
+
+    public void SaveGags(string path, IEnumerable<GagRule> rules)
+    {
+        var data = rules.Select(r => new GagPersistenceModel
+        {
+            Pattern       = r.Pattern,
+            CaseSensitive = r.CaseSensitive,
+            IsEnabled     = r.IsEnabled,
+            ClassName     = r.ClassName,
+        });
+        File.WriteAllText(path, JsonSerializer.Serialize(data, _options));
+    }
+
+    public List<GagPersistenceModel> LoadGags(string path)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<List<GagPersistenceModel>>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
+    }
+
+    public void SaveMacros(string path, IEnumerable<MacroRule> rules)
+    {
+        var data = rules.Select(r => new MacroPersistenceModel
+        {
+            Key    = r.Key,
+            Action = r.Action,
+        });
+        File.WriteAllText(path, JsonSerializer.Serialize(data, _options));
+    }
+
+    public List<MacroPersistenceModel> LoadMacros(string path)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<List<MacroPersistenceModel>>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
     }
 
     public void SavePresets(string path, PresetEngine engine)

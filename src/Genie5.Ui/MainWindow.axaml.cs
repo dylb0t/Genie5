@@ -111,6 +111,7 @@ public partial class MainWindow : Window
                 _factory.RemoveDockable(hiddenVm, collapse: false);
 
         StatusBar.Attach(_gslGameState);
+        StatusBar.ApplyPresets(_presets);
         _roomVm.Attach(_gslGameState);
 
         BuildWindowsMenu();
@@ -192,11 +193,37 @@ public partial class MainWindow : Window
 
     private void ApplyHighlightAndAppend(RenderLine line)
     {
+        // Substitutes: rewrite plain text before highlighting. If any rule
+        // changes the text we flatten to a single default-colored span, since
+        // the replaced text no longer aligns to the original ANSI/GSL spans.
+        if (_substitutes.Rules.Count > 0)
+        {
+            var original = line.PlainText;
+            var replaced = _substitutes.Apply(original);
+            if (!ReferenceEquals(replaced, original) && replaced != original)
+            {
+                line = new RenderLine();
+                line.Spans.Add(new AnsiSpan { Text = replaced, Foreground = "Default" });
+            }
+        }
+
+        // Gags: suppress the line entirely if any enabled rule matches.
+        if (_gags.ShouldGag(line.PlainText)) return;
+
         var rule = _highlights.Match(line.PlainText);
         if (rule != null)
         {
             var ranges = rule.GetHighlightRanges(line.PlainText);
             line = ApplyRangeHighlight(line, ranges, rule.ForegroundColor, rule.BackgroundColor);
+        }
+
+        // Name highlights win over generic ones: apply per-name so each name
+        // keeps its own color.
+        foreach (var group in _nameHighlights.MatchAll(line.PlainText)
+                                             .GroupBy(m => (m.Rule.ForegroundColor, m.Rule.BackgroundColor)))
+        {
+            var ranges = group.Select(m => (m.Start, m.Length)).ToList();
+            line = ApplyRangeHighlight(line, ranges, group.Key.ForegroundColor, group.Key.BackgroundColor);
         }
 
         _scrollback.Add(line);
@@ -460,6 +487,8 @@ public partial class MainWindow : Window
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)
     {
+        if (TryRunMacro(e)) { e.Handled = true; return; }
+
         switch (e.Key)
         {
             case Key.Return:
@@ -492,6 +521,51 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
         }
+    }
+
+    // Returns true if the key event matched a configured macro and was sent.
+    // Mirrors Genie4's macros.cfg key-string format: the .NET Keys enum name,
+    // with modifiers prepended as "Modifier, Key" (e.g. "F1", "Control, F2").
+    private bool TryRunMacro(KeyEventArgs e)
+    {
+        if (_macros is null || _macros.Rules.Count == 0) return false;
+        var keyName = e.Key.ToString();
+        if (string.IsNullOrEmpty(keyName) || keyName == "None") return false;
+
+        var mods = e.KeyModifiers;
+        var ctrl  = (mods & KeyModifiers.Control) != 0;
+        var alt   = (mods & KeyModifiers.Alt)     != 0;
+        var shift = (mods & KeyModifiers.Shift)   != 0;
+
+        // Don't hijack plain letter/digit/space/enter/nav keys with no modifier.
+        if (!ctrl && !alt && !shift && IsTypingKey(e.Key)) return false;
+
+        // Genie4 canonical form: "Mod1, Mod2, Key"
+        var parts = new List<string>();
+        if (ctrl)  parts.Add("Control");
+        if (alt)   parts.Add("Alt");
+        if (shift) parts.Add("Shift");
+        parts.Add(keyName);
+        var canonical = string.Join(", ", parts);
+
+        var rule = _macros.Get(canonical);
+        // Also accept modifier-less "F1" style for Avalonia key names.
+        if (rule is null && parts.Count == 1) rule = _macros.Get(keyName);
+        if (rule is null) return false;
+
+        if (!string.IsNullOrEmpty(rule.Action))
+            _engine.ProcessInput(rule.Action);
+        return true;
+    }
+
+    private static bool IsTypingKey(Key k)
+    {
+        if (k >= Key.A && k <= Key.Z) return true;
+        if (k >= Key.D0 && k <= Key.D9) return true;
+        if (k == Key.Space || k == Key.Back || k == Key.Delete) return true;
+        if (k == Key.Left || k == Key.Right || k == Key.Home || k == Key.End) return true;
+        if (k == Key.Tab) return true;
+        return false;
     }
 
     private void SendInput()
@@ -694,10 +768,36 @@ public partial class MainWindow : Window
 
     private void OnSettings(object? sender, RoutedEventArgs e)
     {
-        var config = new FormConfig(_aliases, _triggers, _highlights, _presets, _windowSettings,
-                                    _variables.Store, SyncVariablesToScriptGlobals);
+        var config = new FormConfig(_aliases, _triggers, _highlights, _nameHighlights,
+                                    _presets, _windowSettings,
+                                    _variables.Store,
+                                    _substitutes, _gags, _macros,
+                                    _classes,
+                                    () => ConfigPath("names.json"),
+                                    SyncVariablesToScriptGlobals,
+                                    SaveNames,
+                                    () => StatusBar.ApplyPresets(_presets),
+                                    SaveSubstitutes,
+                                    SaveGags,
+                                    SaveMacros,
+                                    SaveClasses);
         config.Show();
     }
+
+    private void SaveNames()
+        => _persistence.SaveNames(ConfigPath("names.json"), _nameHighlights.Rules);
+
+    private void SaveSubstitutes()
+        => _persistence.SaveSubstitutes(ConfigPath("substitutes.json"), _substitutes.Rules);
+
+    private void SaveGags()
+        => _persistence.SaveGags(ConfigPath("gags.json"), _gags.Rules);
+
+    private void SaveMacros()
+        => _persistence.SaveMacros(ConfigPath("macros.json"), _macros.Rules);
+
+    private void SaveClasses()
+        => _persistence.SaveClasses(ConfigPath("classes.json"), _classes);
 
     // Mirror user-defined variables into the script engine's Globals dict so
     // scripts can read them as $name alongside engine-set values (roomid,

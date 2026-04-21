@@ -17,10 +17,16 @@
       <TextBlock Name="IdLabel" Foreground="Gray" />
 
       <TextBlock Text="Foreground Color" FontWeight="Bold" />
-      <ComboBox Name="FgColorBox" Width="180" HorizontalAlignment="Left" />
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <ColorPicker Name="FgColorPicker" IsAlphaEnabled="False" />
+        <CheckBox Name="FgDefaultCheck" Content="Use default" VerticalAlignment="Center"/>
+      </StackPanel>
 
       <TextBlock Text="Background Color" FontWeight="Bold" />
-      <ComboBox Name="BgColorBox" Width="180" HorizontalAlignment="Left" />
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <ColorPicker Name="BgColorPicker" IsAlphaEnabled="False" />
+        <CheckBox Name="BgNoneCheck" Content="None" VerticalAlignment="Center"/>
+      </StackPanel>
 
       <CheckBox Name="HighlightLineCheck" Content="Highlight entire line" />
 

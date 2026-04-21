@@ -1,6 +1,8 @@
 using Avalonia.Controls;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Genie4.Core.Gsl;
+using Genie4.Core.Presets;
 
 namespace Genie5.Ui;
 
@@ -29,6 +31,28 @@ public partial class StatusBarView : UserControl
         Compass.Attach(state);
         BodyDiagram.Attach(state);
         StatusIcons.Attach(state);
+    }
+
+    // Pulls bar fill colors from the Edit > Presets configuration. Safe to
+    // call repeatedly (e.g. after the user edits a preset).
+    public void ApplyPresets(PresetEngine presets)
+    {
+        HealthBar.Foreground    = BrushFor(presets, "health",        "#962020");
+        ManaBar.Foreground      = BrushFor(presets, "mana",          "#1A5EA8");
+        ConcBar.Foreground      = BrushFor(presets, "concentration", "#0E7A6A");
+        StaminaBar.Foreground   = BrushFor(presets, "stamina",       "#2E7D32");
+        SpiritBar.Foreground    = BrushFor(presets, "spirit",        "#6A1EA0");
+        RoundtimeFill.Fill      = BrushFor(presets, "roundtime",     "#1E66E5");
+        CastTimeBar.Foreground  = BrushFor(presets, "castbar",       "#5C6BC0");
+    }
+
+    private static IBrush BrushFor(PresetEngine presets, string id, string fallbackHex)
+    {
+        var fg = presets.GetForeground(id);
+        if (!string.IsNullOrEmpty(fg) && !fg.Equals("Default", StringComparison.OrdinalIgnoreCase)
+            && Color.TryParse(fg, out var c))
+            return new SolidColorBrush(c);
+        return new SolidColorBrush(Color.Parse(fallbackHex));
     }
 
     private void OnStateChanged() => Refresh();

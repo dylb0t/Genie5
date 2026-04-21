@@ -1,41 +1,21 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:Genie5.Ui"
              x:Class="Genie5.Ui.HighlightsPanel">
 
-  <Grid RowDefinitions="Auto,*">
+  <TabControl>
 
-    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="4" Margin="4,4,4,0">
-      <Button Content="Add New" Click="OnAdd" />
-      <Button Content="Delete"  Click="OnDelete" />
-      <Button Content="Toggle"  Click="OnToggle" />
-    </StackPanel>
+    <TabItem Header="Strings">
+      <local:HighlightStringsPanel Name="StringsPanelCtrl" />
+    </TabItem>
 
-    <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="4">
-      <ListBox Name="ItemsList"
-               Grid.Column="0"
-               Margin="0,0,4,0"
-               SelectionChanged="OnSelectionChanged" />
+    <TabItem Header="Names">
+      <local:NamesPanel Name="NamesPanelCtrl" />
+    </TabItem>
 
-      <Grid Grid.Column="1"
-            RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
-            Margin="4,0,0,0">
-        <TextBlock Grid.Row="0" Text="Pattern:" Margin="0,0,0,2" />
-        <TextBox   Grid.Row="1" Name="PatternBox" Margin="0,0,0,8" />
-        <TextBlock Grid.Row="2" Text="Foreground color:" Margin="0,0,0,2" />
-        <ComboBox  Grid.Row="3" Name="ColorBox" Margin="0,0,0,8" HorizontalAlignment="Stretch" />
-        <TextBlock Grid.Row="4" Text="Background color:" Margin="0,0,0,2" />
-        <ComboBox  Grid.Row="5" Name="BgColorBox" Margin="0,0,0,8" HorizontalAlignment="Stretch" />
-        <TextBlock Grid.Row="6" Text="Match type:" Margin="0,0,0,2" />
-        <ComboBox  Grid.Row="7" Name="MatchTypeBox" Margin="0,0,0,8" HorizontalAlignment="Stretch" />
-        <CheckBox  Grid.Row="8" Name="CaseSensitiveCheck" Content="Case sensitive" Margin="0,0,0,4" />
-        <CheckBox  Grid.Row="9" Name="EnabledCheck"       Content="Enabled"        Margin="0,0,0,8" IsChecked="True" />
-        <StackPanel Grid.Row="10" Orientation="Horizontal" Spacing="4">
-          <Button Content="Save"  Click="OnSave" />
-          <Button Content="Clear" Click="OnClear" />
-        </StackPanel>
-        <TextBlock Grid.Row="11" Name="StatusText" Margin="0,6,0,0" Foreground="Gray" FontStyle="Italic" />
-      </Grid>
-    </Grid>
+    <TabItem Header="Presets">
+      <local:PresetsPanel Name="PresetsPanelCtrl" />
+    </TabItem>
 
-  </Grid>
+  </TabControl>
 </UserControl>

@@ -137,47 +137,52 @@
 
       </Grid>
 
-      <!-- Bottom row: full-width vitals bars -->
-      <Grid ColumnDefinitions="*,*,*,*,*" Height="22">
+      <!-- Bottom row: full-width vitals bars (Genie4 sizing) -->
+      <Grid ColumnDefinitions="*,*,*,*,*" Height="30">
 
         <Grid Grid.Column="0">
           <ProgressBar Name="HealthBar" Minimum="0" Maximum="100" Value="100"
-                       Foreground="#962020" Background="#2A1010"/>
+                       Foreground="#962020" Background="#2A1010"
+                       MinHeight="0" Height="30"/>
           <TextBlock Name="HealthText" Text="Health --"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                     Foreground="White" FontSize="11"/>
+                     Foreground="White" FontSize="14"/>
         </Grid>
 
         <Grid Grid.Column="1">
           <ProgressBar Name="ManaBar" Minimum="0" Maximum="100" Value="100"
-                       Foreground="#1A5EA8" Background="#101828"/>
+                       Foreground="#1A5EA8" Background="#101828"
+                       MinHeight="0" Height="30"/>
           <TextBlock Name="ManaText" Text="Mana --"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                     Foreground="White" FontSize="11"/>
+                     Foreground="White" FontSize="14"/>
         </Grid>
 
         <Grid Grid.Column="2">
           <ProgressBar Name="ConcBar" Minimum="0" Maximum="100" Value="100"
-                       Foreground="#0E7A6A" Background="#101A18"/>
+                       Foreground="#0E7A6A" Background="#101A18"
+                       MinHeight="0" Height="30"/>
           <TextBlock Name="ConcText" Text="Concentration --"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                     Foreground="White" FontSize="11"/>
+                     Foreground="White" FontSize="14"/>
         </Grid>
 
         <Grid Grid.Column="3">
           <ProgressBar Name="StaminaBar" Minimum="0" Maximum="100" Value="100"
-                       Foreground="#2E7D32" Background="#101810"/>
+                       Foreground="#2E7D32" Background="#101810"
+                       MinHeight="0" Height="30"/>
           <TextBlock Name="StaminaText" Text="Fatigue --"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                     Foreground="White" FontSize="11"/>
+                     Foreground="White" FontSize="14"/>
         </Grid>
 
         <Grid Grid.Column="4">
           <ProgressBar Name="SpiritBar" Minimum="0" Maximum="100" Value="100"
-                       Foreground="#6A1EA0" Background="#180E1A"/>
+                       Foreground="#6A1EA0" Background="#180E1A"
+                       MinHeight="0" Height="30"/>
           <TextBlock Name="SpiritText" Text="Spirit --"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                     Foreground="White" FontSize="11"/>
+                     Foreground="White" FontSize="14"/>
         </Grid>
 
       </Grid>

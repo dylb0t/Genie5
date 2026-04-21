@@ -13,6 +13,7 @@ public sealed class TriggerPersistenceModel
     public string Action { get; set; } = string.Empty;
     public bool CaseSensitive { get; set; }
     public bool IsEnabled { get; set; } = true;
+    public string ClassName { get; set; } = string.Empty;
 }
 
 public sealed class VariablePersistenceModel
@@ -36,6 +37,43 @@ public sealed class HighlightPersistenceModel
 
     public bool CaseSensitive { get; set; }
     public bool IsEnabled { get; set; } = true;
+    public string ClassName { get; set; } = string.Empty;
+}
+
+public sealed class ClassPersistenceModel
+{
+    public string Name     { get; set; } = string.Empty;
+    public bool   IsActive { get; set; } = true;
+}
+
+public sealed class NamePersistenceModel
+{
+    public string Name            { get; set; } = string.Empty;
+    public string ForegroundColor { get; set; } = "Yellow";
+    public string BackgroundColor { get; set; } = string.Empty;
+}
+
+public sealed class SubstitutePersistenceModel
+{
+    public string Pattern       { get; set; } = string.Empty;
+    public string Replacement   { get; set; } = string.Empty;
+    public bool   CaseSensitive { get; set; }
+    public bool   IsEnabled     { get; set; } = true;
+    public string ClassName     { get; set; } = string.Empty;
+}
+
+public sealed class GagPersistenceModel
+{
+    public string Pattern       { get; set; } = string.Empty;
+    public bool   CaseSensitive { get; set; }
+    public bool   IsEnabled     { get; set; } = true;
+    public string ClassName     { get; set; } = string.Empty;
+}
+
+public sealed class MacroPersistenceModel
+{
+    public string Key    { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
 }
 
 public sealed class PresetPersistenceModel

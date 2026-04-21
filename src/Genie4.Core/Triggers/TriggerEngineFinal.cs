@@ -1,6 +1,7 @@
 namespace Genie4.Core.Triggers;
 
 using System.Text.RegularExpressions;
+using Genie4.Core.Classes;
 using Genie4.Core.Commanding;
 
 public sealed class TriggerEngineFinal
@@ -17,10 +18,15 @@ public sealed class TriggerEngineFinal
 
     public IReadOnlyList<TriggerRule> Triggers => _triggers;
 
-    public TriggerRule AddTrigger(string pattern, string action, bool caseSensitive = false, bool isEnabled = true)
+    /// <summary>Optional class gate — when set, rules whose class is inactive are skipped.</summary>
+    public ClassEngine? Classes { get; set; }
+
+    public TriggerRule AddTrigger(string pattern, string action, bool caseSensitive = false,
+                                  bool isEnabled = true, string className = "")
     {
-        var trigger = new TriggerRule(pattern, action, caseSensitive, isEnabled);
+        var trigger = new TriggerRule(pattern, action, caseSensitive, isEnabled, className);
         _triggers.Add(trigger);
+        if (!string.IsNullOrEmpty(className)) Classes?.Ensure(className);
         return trigger;
     }
 
@@ -46,8 +52,11 @@ public sealed class TriggerEngineFinal
     {
         foreach (var trigger in _triggers)
         {
+            if (!trigger.IsEnabled) continue;
+            if (Classes is not null && !Classes.IsActive(trigger.ClassName)) continue;
+
             var match = trigger.Regex.Match(line);
-            if (!trigger.IsEnabled || !match.Success)
+            if (!match.Success)
             {
                 continue;
             }

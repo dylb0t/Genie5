@@ -7,31 +7,18 @@ namespace Genie5.Ui;
 
 public partial class PresetsPanel : UserControl
 {
-    private static readonly string[] ColorOptions =
-    [
-        "Default",
-        "White", "WhiteSmoke", "LightGray", "Silver", "Gray",
-        "Black", "DimGray",
-        "Yellow", "Khaki", "Gold", "Orange",
-        "Red", "IndianRed", "Maroon",
-        "LightGreen", "Green", "PaleGreen", "GreenYellow",
-        "Cyan", "PaleTurquoise",
-        "CornflowerBlue", "Blue", "Navy", "MediumBlue",
-        "Magenta", "Orchid", "Purple",
-    ];
-
     private PresetEngine? _engine;
+    private Action?       _onChanged;
 
     public PresetsPanel()
     {
         InitializeComponent();
-        FgColorBox.ItemsSource = ColorOptions;
-        BgColorBox.ItemsSource = new[] { "" }.Concat(ColorOptions).ToArray();
     }
 
-    public void Initialize(PresetEngine engine)
+    public void Initialize(PresetEngine engine, Action? onChanged = null)
     {
-        _engine = engine;
+        _engine    = engine;
+        _onChanged = onChanged;
         Refresh();
     }
 
@@ -48,9 +35,9 @@ public partial class PresetsPanel : UserControl
         if (rule is null) return;
 
         IdLabel.Text = id;
-        FgColorBox.SelectedItem        = rule.ForegroundColor;
-        BgColorBox.SelectedItem        = string.IsNullOrEmpty(rule.BackgroundColor) ? "" : rule.BackgroundColor;
-        HighlightLineCheck.IsChecked   = rule.HighlightLine;
+        ColorPickerHelpers.LoadColor(FgColorPicker, FgDefaultCheck, rule.ForegroundColor, "Default");
+        ColorPickerHelpers.LoadColor(BgColorPicker, BgNoneCheck,    rule.BackgroundColor, "");
+        HighlightLineCheck.IsChecked = rule.HighlightLine;
         UpdatePreview(rule.ForegroundColor, rule.BackgroundColor);
         StatusText.Text = string.Empty;
     }
@@ -59,8 +46,8 @@ public partial class PresetsPanel : UserControl
     {
         if (_engine is null || PresetList.SelectedItem is not string id) return;
 
-        var fg = FgColorBox.SelectedItem as string ?? "Default";
-        var bg = BgColorBox.SelectedItem as string ?? string.Empty;
+        var fg = ColorPickerHelpers.ReadColor(FgColorPicker, FgDefaultCheck, "Default");
+        var bg = ColorPickerHelpers.ReadColor(BgColorPicker, BgNoneCheck,    "");
 
         _engine.Apply(new PresetRule
         {
@@ -71,6 +58,7 @@ public partial class PresetsPanel : UserControl
         });
 
         UpdatePreview(fg, bg);
+        _onChanged?.Invoke();
         StatusText.Text = "Applied.";
     }
 
@@ -83,10 +71,11 @@ public partial class PresetsPanel : UserControl
         if (rule is null) { StatusText.Text = "No default for this preset."; return; }
 
         _engine.Apply(rule);
-        FgColorBox.SelectedItem      = rule.ForegroundColor;
-        BgColorBox.SelectedItem      = string.IsNullOrEmpty(rule.BackgroundColor) ? "" : rule.BackgroundColor;
+        ColorPickerHelpers.LoadColor(FgColorPicker, FgDefaultCheck, rule.ForegroundColor, "Default");
+        ColorPickerHelpers.LoadColor(BgColorPicker, BgNoneCheck,    rule.BackgroundColor, "");
         HighlightLineCheck.IsChecked = rule.HighlightLine;
         UpdatePreview(rule.ForegroundColor, rule.BackgroundColor);
+        _onChanged?.Invoke();
         StatusText.Text = "Reset to default.";
     }
 
