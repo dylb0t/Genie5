@@ -27,6 +27,8 @@ public sealed class AliasEngine
         return removed > 0;
     }
 
+    public void Clear() => _aliases.Clear();
+
     public bool SetEnabled(string name, bool enabled)
     {
         var alias = _aliases.FirstOrDefault(a => a.Name == name);

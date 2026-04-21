@@ -1,9 +1,9 @@
-using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using Genie4.Core.Highlights;
+using Genie4.Core.Import;
 
 namespace Genie5.Ui;
 
@@ -142,47 +142,11 @@ public partial class NamesPanel : UserControl
         var paths = await dialog.ShowAsync(parent);
         if (paths is null || paths.Length == 0) return;
 
-        var (imported, skipped) = ImportFromCfg(paths[0], _engine);
+        var result = Genie4Importer.ImportNames(paths[0], _engine, ImportMode.Merge);
         Refresh();
         _onChanged?.Invoke();
-        StatusText.Text = skipped > 0
-            ? $"Imported {imported} name(s), skipped {skipped}."
-            : $"Imported {imported} name(s).";
-    }
-
-    // Parses Genie4-style "#name {color[, bgcolor]} {name}" lines. Class/sound
-    // trailing tokens are tolerated and ignored.
-    internal static (int Imported, int Skipped) ImportFromCfg(string path, NameHighlightEngine engine)
-    {
-        var pattern = new Regex(
-            @"^\s*#name\s+\{(?<colors>[^{}]*)\}\s+\{(?<name>[^{}]*)\}(?:\s+\{[^{}]*\}){0,2}\s*$",
-            RegexOptions.IgnoreCase);
-
-        int imported = 0, skipped = 0;
-        foreach (var raw in File.ReadAllLines(path))
-        {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith("//") || line.StartsWith("#!")) continue;
-            if (!line.StartsWith("#name", StringComparison.OrdinalIgnoreCase)) continue;
-
-            var m = pattern.Match(line);
-            if (!m.Success) { skipped++; continue; }
-
-            var (fg, bg) = ParseColors(m.Groups["colors"].Value);
-            var name = m.Groups["name"].Value.Trim();
-            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(fg)) { skipped++; continue; }
-
-            engine.Add(name, fg, bg);
-            imported++;
-        }
-        return (imported, skipped);
-    }
-
-    private static (string Fg, string Bg) ParseColors(string raw)
-    {
-        var parts = raw.Split(',', 2);
-        var fg = parts[0].Trim();
-        var bg = parts.Length > 1 ? parts[1].Trim() : string.Empty;
-        return (fg, bg);
+        StatusText.Text = result.Skipped > 0
+            ? $"Imported {result.Imported} name(s), skipped {result.Skipped}."
+            : $"Imported {result.Imported} name(s).";
     }
 }

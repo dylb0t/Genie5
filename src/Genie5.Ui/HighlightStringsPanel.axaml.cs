@@ -4,6 +4,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using Genie4.Core.Highlights;
+using Genie4.Core.Import;
 
 namespace Genie5.Ui;
 
@@ -126,71 +127,11 @@ public partial class HighlightStringsPanel : UserControl
         var paths = await dialog.ShowAsync(parent);
         if (paths is null || paths.Length == 0) return;
 
-        var (imported, skipped) = ImportFromCfg(paths[0], _engine);
+        var result = Genie4Importer.ImportHighlights(paths[0], _engine, ImportMode.Merge);
         Refresh();
-        StatusText.Text = skipped > 0
-            ? $"Imported {imported} highlight(s), skipped {skipped}."
-            : $"Imported {imported} highlight(s).";
-    }
-
-    // Parses Genie4-style "#highlight {type} {fg[, bg]} {pattern} [{class}] [{sound}]"
-    // lines. Returns (imported, skipped) — skipped counts unparseable or invalid
-    // (e.g. bad regex) entries. Sound metadata is ignored; class is captured.
-    internal static (int Imported, int Skipped) ImportFromCfg(string path, HighlightEngine engine)
-    {
-        var pattern = new Regex(
-            @"^\s*#highlight\s+\{(?<type>[^{}]*)\}\s+\{(?<colors>[^{}]*)\}\s+\{(?<pattern>[^{}]*)\}(?:\s+\{(?<cls>[^{}]*)\})?(?:\s+\{[^{}]*\})?\s*$",
-            RegexOptions.IgnoreCase);
-
-        int imported = 0, skipped = 0;
-        foreach (var raw in File.ReadAllLines(path))
-        {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith("//") || line.StartsWith("#!")) continue;
-            if (!line.StartsWith("#highlight", StringComparison.OrdinalIgnoreCase)) continue;
-
-            var m = pattern.Match(line);
-            if (!m.Success) { skipped++; continue; }
-
-            var matchType = ParseMatchType(m.Groups["type"].Value);
-            if (matchType is null) { skipped++; continue; }
-
-            var (fg, bg) = ParseColors(m.Groups["colors"].Value);
-            var rulePattern = m.Groups["pattern"].Value;
-            if (string.IsNullOrEmpty(rulePattern) || string.IsNullOrEmpty(fg)) { skipped++; continue; }
-
-            if (matchType == HighlightMatchType.Regex)
-            {
-                try { _ = new Regex(rulePattern); }
-                catch (RegexParseException) { skipped++; continue; }
-            }
-
-            var cls = m.Groups["cls"].Success ? m.Groups["cls"].Value : string.Empty;
-
-            engine.RemoveRule(rulePattern);
-            engine.AddRule(rulePattern, fg, bg, matchType.Value, caseSensitive: false, isEnabled: true, className: cls);
-            imported++;
-        }
-        return (imported, skipped);
-    }
-
-    private static HighlightMatchType? ParseMatchType(string raw) =>
-        raw.Trim().ToLowerInvariant() switch
-        {
-            "string"     => HighlightMatchType.String,
-            "line"       => HighlightMatchType.Line,
-            "beginswith" => HighlightMatchType.BeginsWith,
-            "regexp"     => HighlightMatchType.Regex,
-            "regex"      => HighlightMatchType.Regex,
-            _            => null,
-        };
-
-    private static (string Fg, string Bg) ParseColors(string raw)
-    {
-        var parts = raw.Split(',', 2);
-        var fg = parts[0].Trim();
-        var bg = parts.Length > 1 ? parts[1].Trim() : string.Empty;
-        return (fg, bg);
+        StatusText.Text = result.Skipped > 0
+            ? $"Imported {result.Imported} highlight(s), skipped {result.Skipped}."
+            : $"Imported {result.Imported} highlight(s).";
     }
 
     private void ClearForm()

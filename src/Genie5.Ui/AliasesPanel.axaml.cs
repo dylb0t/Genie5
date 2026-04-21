@@ -1,8 +1,8 @@
-using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Genie4.Core.Aliases;
+using Genie4.Core.Import;
 
 namespace Genie5.Ui;
 
@@ -105,40 +105,8 @@ public partial class AliasesPanel : UserControl
         var paths = await dialog.ShowAsync(parent);
         if (paths is null || paths.Length == 0) return;
 
-        var imported = ImportFromCfg(paths[0], _engine);
+        var result = Genie4Importer.ImportAliases(paths[0], _engine, ImportMode.Merge);
         Refresh();
-        StatusText.Text = $"Imported {imported} alias(es).";
-    }
-
-    // Parses Genie4-style "#alias {name} {expansion}" lines. An optional
-    // add/delete keyword between #alias and the name is accepted and treated
-    // as an add (delete lines are ignored to avoid destroying existing rules).
-    internal static int ImportFromCfg(string path, AliasEngine engine)
-    {
-        var pattern = new Regex(
-            @"^\s*#alias(?:\s+(?<verb>add|delete))?\s+\{(?<name>[^}]*)\}\s+\{(?<expansion>.*)\}\s*$",
-            RegexOptions.IgnoreCase);
-
-        int count = 0;
-        foreach (var raw in File.ReadAllLines(path))
-        {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith("//") || line.StartsWith("#!")) continue;
-
-            var m = pattern.Match(line);
-            if (!m.Success) continue;
-
-            var verb      = m.Groups["verb"].Value.ToLowerInvariant();
-            if (verb == "delete") continue;
-
-            var name      = m.Groups["name"].Value;
-            var expansion = m.Groups["expansion"].Value;
-            if (string.IsNullOrEmpty(name)) continue;
-
-            engine.RemoveAlias(name);
-            engine.AddAlias(name, expansion, isEnabled: true);
-            count++;
-        }
-        return count;
+        StatusText.Text = $"Imported {result.Imported} alias(es).";
     }
 }

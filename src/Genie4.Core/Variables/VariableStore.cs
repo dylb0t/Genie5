@@ -26,6 +26,16 @@ public sealed class VariableStore
         return _variables.Remove(name);
     }
 
+    /// <summary>Removes all user-scope variables; leaves system/engine-managed variables intact.</summary>
+    public void ClearUserVariables()
+    {
+        var userKeys = _variables
+            .Where(kv => kv.Value.Scope == VariableScope.User)
+            .Select(kv => kv.Key)
+            .ToList();
+        foreach (var k in userKeys) _variables.Remove(k);
+    }
+
     public IReadOnlyDictionary<string, VariableValue> GetAll() => _variables;
 
     public string Expand(string input)

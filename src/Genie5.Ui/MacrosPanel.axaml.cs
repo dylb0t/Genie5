@@ -1,7 +1,7 @@
-using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using Genie4.Core.Import;
 using Genie4.Core.Macros;
 
 namespace Genie5.Ui;
@@ -92,40 +92,12 @@ public partial class MacrosPanel : UserControl
         var paths = await dialog.ShowAsync(parent);
         if (paths is null || paths.Length == 0) return;
 
-        var (imported, skipped) = ImportFromCfg(paths[0], _engine);
+        var result = Genie4Importer.ImportMacros(paths[0], _engine, ImportMode.Merge);
         Refresh();
         _onChanged?.Invoke();
-        StatusText.Text = skipped > 0
-            ? $"Imported {imported} macro(s), skipped {skipped}."
-            : $"Imported {imported} macro(s).";
-    }
-
-    // Parses Genie4 "#macro {key} {action}" lines. The key token preserves
-    // Genie4's serialized Keys form (e.g. "F1", "Control, F2", "Alt, NumPad5").
-    internal static (int Imported, int Skipped) ImportFromCfg(string path, MacroEngine engine)
-    {
-        var pattern = new Regex(
-            @"^\s*#macro\s+\{(?<key>[^{}]*)\}\s+\{(?<action>[^{}]*)\}\s*$",
-            RegexOptions.IgnoreCase);
-
-        int imported = 0, skipped = 0;
-        foreach (var raw in File.ReadAllLines(path))
-        {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith("//") || line.StartsWith("#!")) continue;
-            if (!line.StartsWith("#macro", StringComparison.OrdinalIgnoreCase)) continue;
-
-            var m = pattern.Match(line);
-            if (!m.Success) { skipped++; continue; }
-
-            var key    = m.Groups["key"].Value.Trim();
-            var action = m.Groups["action"].Value;
-            if (string.IsNullOrEmpty(key)) { skipped++; continue; }
-
-            engine.Add(key, action);
-            imported++;
-        }
-        return (imported, skipped);
+        StatusText.Text = result.Skipped > 0
+            ? $"Imported {result.Imported} macro(s), skipped {result.Skipped}."
+            : $"Imported {result.Imported} macro(s).";
     }
 
     private void ClearForm()

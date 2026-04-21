@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using Genie4.Core.Import;
 using Genie4.Core.Triggers;
 
 namespace Genie5.Ui;
@@ -105,55 +106,11 @@ public partial class TriggersPanel : UserControl
         var paths = await dialog.ShowAsync(parent);
         if (paths is null || paths.Length == 0) return;
 
-        var (imported, skipped) = ImportFromCfg(paths[0], _engine);
+        var result = Genie4Importer.ImportTriggers(paths[0], _engine, ImportMode.Merge);
         Refresh();
-        StatusText.Text = skipped > 0
-            ? $"Imported {imported} trigger(s), skipped {skipped}."
-            : $"Imported {imported} trigger(s).";
-    }
-
-    // Parses Genie4 "#trigger {pattern} {action} [{class}]" lines. Honours
-    // /pattern/i ignore-case suffix and e/pattern/ eval-trigger prefix (eval
-    // triggers are imported as regex triggers — eval semantics unsupported).
-    internal static (int Imported, int Skipped) ImportFromCfg(string path, TriggerEngineFinal engine)
-    {
-        var pattern = new Regex(
-            @"^\s*#trigger\s+\{(?<pat>[^{}]*)\}\s+\{(?<action>[^{}]*)\}(?:\s+\{(?<cls>[^{}]*)\})?\s*$",
-            RegexOptions.IgnoreCase);
-
-        int imported = 0, skipped = 0;
-        foreach (var raw in File.ReadAllLines(path))
-        {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith("//") || line.StartsWith("#!")) continue;
-            if (!line.StartsWith("#trigger", StringComparison.OrdinalIgnoreCase)) continue;
-
-            var m = pattern.Match(line);
-            if (!m.Success) { skipped++; continue; }
-
-            var pat = m.Groups["pat"].Value;
-            bool caseInsensitive = false;
-            if (pat.StartsWith("e/", StringComparison.OrdinalIgnoreCase) && pat.EndsWith('/'))
-                pat = pat[2..^1];
-            else
-            {
-                if (pat.StartsWith('/')) pat = pat[1..];
-                if (pat.EndsWith("/i", StringComparison.OrdinalIgnoreCase)) { caseInsensitive = true; pat = pat[..^2]; }
-                else if (pat.EndsWith('/')) pat = pat[..^1];
-            }
-
-            if (string.IsNullOrEmpty(pat)) { skipped++; continue; }
-            try { _ = new Regex(pat); }
-            catch (RegexParseException) { skipped++; continue; }
-
-            var action = m.Groups["action"].Value;
-            var cls    = m.Groups["cls"].Success ? m.Groups["cls"].Value : string.Empty;
-
-            engine.RemoveTrigger(pat);
-            engine.AddTrigger(pat, action, caseSensitive: !caseInsensitive, isEnabled: true, className: cls);
-            imported++;
-        }
-        return (imported, skipped);
+        StatusText.Text = result.Skipped > 0
+            ? $"Imported {result.Imported} trigger(s), skipped {result.Skipped}."
+            : $"Imported {result.Imported} trigger(s).";
     }
 
     private void ClearForm()

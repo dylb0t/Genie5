@@ -36,6 +36,8 @@ public sealed class TriggerEngineFinal
         return removed > 0;
     }
 
+    public void Clear() => _triggers.Clear();
+
     public bool SetEnabled(string pattern, bool isEnabled)
     {
         var trigger = _triggers.FirstOrDefault(t => t.Pattern == pattern);

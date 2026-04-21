@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Dock.Model.Core;
 using Genie4.Core.Gsl;
+using Genie4.Core.Import;
 using Genie4.Core.Persistence;
 using Genie4.Core.Profiles;
 using Genie4.Core.Sge;
@@ -117,6 +118,11 @@ public partial class MainWindow : Window
         BuildWindowsMenu();
 
         InputBox.KeyDown += OnInputKeyDown;
+
+        // Focus the input box on first show and whenever the window regains
+        // activation, so typing always lands there without an explicit click.
+        Opened    += (_, _) => InputBox.Focus();
+        Activated += (_, _) => InputBox.Focus();
 
         // Restore saved layout (window geometry + dock proportions).
         // At startup no profile is connected, so this loads the default layout.
@@ -594,6 +600,7 @@ public partial class MainWindow : Window
 
         if (_mapper.TryHandleGoto(expanded)) return;
         if (TryHandleScriptCommand(expanded)) return;
+        if (TryHandleClassCommand(expanded)) return;
 
         if (!_aliases.TryProcess(expanded))
             _engine.ProcessInput(expanded);
@@ -764,6 +771,111 @@ public partial class MainWindow : Window
         }
 
         return false;
+    }
+
+    // Handles Genie4 #class commands: listing, toggling, and bulk activation.
+    //   #class                         → list all classes
+    //   #class <name>                  → show single class state
+    //   #class <name> on|off|true|false|1|0|yes|no
+    //   #class all on|off|...          → activate/deactivate every class
+    //   #class +name +other -name      → batch +/- syntax (+ activates, - deactivates)
+    //   #class +all | -all             → all on / all off via +/- syntax
+    private bool TryHandleClassCommand(string input)
+    {
+        var t = input.TrimStart();
+        if (!t.StartsWith("#class", StringComparison.OrdinalIgnoreCase)) return false;
+        // Only treat as a class command when the directive is "#class" or
+        // "#classes" (not some other "#classXyz" we haven't planned for).
+        int dirLen;
+        if (t.StartsWith("#classes", StringComparison.OrdinalIgnoreCase)) dirLen = 8;
+        else                                                              dirLen = 6;
+        if (t.Length > dirLen && t[dirLen] != ' ' && t[dirLen] != '\t') return false;
+
+        var rest = t.Length > dirLen ? t[dirLen..].Trim() : string.Empty;
+        var tokens = rest.Length == 0
+            ? Array.Empty<string>()
+            : rest.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
+        if (tokens.Length == 0)
+        {
+            EchoClassList(null);
+            return true;
+        }
+
+        // Batch +/- syntax: all tokens must start with + or -.
+        if (tokens[0].StartsWith('+') || tokens[0].StartsWith('-'))
+        {
+            int changed = 0;
+            foreach (var tok in tokens)
+            {
+                if (tok.Length < 2 || (tok[0] != '+' && tok[0] != '-')) continue;
+                var name = tok[1..];
+                bool activate = tok[0] == '+';
+                if (name.Equals("all", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (activate) _classes.ActivateAll(); else _classes.DeactivateAll();
+                }
+                else
+                {
+                    _classes.Set(name, activate);
+                }
+                changed++;
+            }
+            SaveClasses();
+            AppendOutput($"[class] {changed} change(s) applied.");
+            return true;
+        }
+
+        if (tokens.Length == 1)
+        {
+            EchoClassList(tokens[0]);
+            return true;
+        }
+
+        var first    = tokens[0];
+        var stateRaw = tokens[1].ToLowerInvariant();
+        bool? active = stateRaw switch
+        {
+            "on"  or "true"  or "1" or "yes" => true,
+            "off" or "false" or "0" or "no"  => false,
+            _                                 => null,
+        };
+
+        if (active is null)
+        {
+            AppendOutput($"[class] Unknown state '{tokens[1]}'. Use on|off.");
+            return true;
+        }
+
+        if (first.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            if (active.Value) _classes.ActivateAll(); else _classes.DeactivateAll();
+            SaveClasses();
+            AppendOutput($"[class] all {(active.Value ? "on" : "off")}");
+            return true;
+        }
+
+        _classes.Set(first, active.Value);
+        SaveClasses();
+        AppendOutput($"[class] {first} {(active.Value ? "on" : "off")}");
+        return true;
+    }
+
+    private void EchoClassList(string? filter)
+    {
+        var all = _classes.GetAll();
+        if (all.Count == 0)
+        {
+            AppendOutput("[class] (no classes)");
+            return;
+        }
+        foreach (var kv in all)
+        {
+            if (!string.IsNullOrEmpty(filter) &&
+                !kv.Key.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                continue;
+            AppendOutput($"[class] {kv.Key} = {(kv.Value ? "on" : "off")}");
+        }
     }
 
     private void OnSettings(object? sender, RoutedEventArgs e)
@@ -974,6 +1086,110 @@ public partial class MainWindow : Window
             AppendOutput("[mapper] No .xml map files found in that folder.");
         else
             AppendOutput($"[mapper] Imported {count} map(s) to {DataPath("Maps")}");
+    }
+
+    private async void OnMenuImportGenie4Config(object? sender, RoutedEventArgs e)
+    {
+        var dialog = new DialogImportGenie4();
+        var result = await dialog.ShowDialog<DialogImportGenie4.Result?>(this);
+        if (result is null) return;
+
+        var ctx = new Genie4ImportContext
+        {
+            Aliases     = _aliases,
+            Triggers    = _triggers,
+            Highlights  = _highlights,
+            Substitutes = _substitutes,
+            Gags        = _gags,
+            Macros      = _macros,
+            Names       = _nameHighlights,
+            Presets     = _presets,
+            Variables   = _variables.Store,
+            Classes     = _classes,
+        };
+
+        var agg = new ImportAllResult();
+
+        foreach (var (type, overridePath) in result.IndividualFiles)
+        {
+            if (overridePath is not null)
+                ImportSingle(type, overridePath, ctx, result.Mode, agg);
+        }
+
+        // Bulk dir import for any selected types that didn't have a file override
+        var dirTypes = Genie4ImportTypes.None;
+        foreach (var (type, overridePath) in result.IndividualFiles)
+            if (overridePath is null) dirTypes |= type;
+
+        if (dirTypes != Genie4ImportTypes.None && Directory.Exists(result.Directory))
+        {
+            var dirResult = Genie4Importer.ImportDirectory(result.Directory, ctx, result.Mode, dirTypes);
+            MergeInto(agg, dirResult);
+        }
+
+        SaveData();
+        SyncVariablesToScriptGlobals();
+        StatusBar.ApplyPresets(_presets);
+
+        AppendOutput(FormatImportSummary(agg));
+    }
+
+    private static void ImportSingle(Genie4ImportTypes type, string path,
+                                     Genie4ImportContext ctx, ImportMode mode, ImportAllResult agg)
+    {
+        switch (type)
+        {
+            case Genie4ImportTypes.Aliases:     agg.Aliases     = Genie4Importer.ImportAliases    (path, ctx.Aliases,     mode); break;
+            case Genie4ImportTypes.Triggers:    agg.Triggers    = Genie4Importer.ImportTriggers   (path, ctx.Triggers,    mode); break;
+            case Genie4ImportTypes.Highlights:  agg.Highlights  = Genie4Importer.ImportHighlights (path, ctx.Highlights,  mode); break;
+            case Genie4ImportTypes.Substitutes: agg.Substitutes = Genie4Importer.ImportSubstitutes(path, ctx.Substitutes, mode); break;
+            case Genie4ImportTypes.Gags:        agg.Gags        = Genie4Importer.ImportGags       (path, ctx.Gags,        mode); break;
+            case Genie4ImportTypes.Macros:      agg.Macros      = Genie4Importer.ImportMacros     (path, ctx.Macros,      mode); break;
+            case Genie4ImportTypes.Names:       agg.Names       = Genie4Importer.ImportNames      (path, ctx.Names,       mode); break;
+            case Genie4ImportTypes.Presets:     agg.Presets     = Genie4Importer.ImportPresets    (path, ctx.Presets,     mode); break;
+            case Genie4ImportTypes.Variables:   agg.Variables   = Genie4Importer.ImportVariables  (path, ctx.Variables,   mode); break;
+            case Genie4ImportTypes.Classes:     agg.Classes     = Genie4Importer.ImportClasses    (path, ctx.Classes,     mode); break;
+        }
+    }
+
+    private static void MergeInto(ImportAllResult a, ImportAllResult b)
+    {
+        a.Aliases     = new ImportResult(a.Aliases.Imported     + b.Aliases.Imported,     a.Aliases.Skipped     + b.Aliases.Skipped);
+        a.Triggers    = new ImportResult(a.Triggers.Imported    + b.Triggers.Imported,    a.Triggers.Skipped    + b.Triggers.Skipped);
+        a.Highlights  = new ImportResult(a.Highlights.Imported  + b.Highlights.Imported,  a.Highlights.Skipped  + b.Highlights.Skipped);
+        a.Substitutes = new ImportResult(a.Substitutes.Imported + b.Substitutes.Imported, a.Substitutes.Skipped + b.Substitutes.Skipped);
+        a.Gags        = new ImportResult(a.Gags.Imported        + b.Gags.Imported,        a.Gags.Skipped        + b.Gags.Skipped);
+        a.Macros      = new ImportResult(a.Macros.Imported      + b.Macros.Imported,      a.Macros.Skipped      + b.Macros.Skipped);
+        a.Names       = new ImportResult(a.Names.Imported       + b.Names.Imported,       a.Names.Skipped       + b.Names.Skipped);
+        a.Presets     = new ImportResult(a.Presets.Imported     + b.Presets.Imported,     a.Presets.Skipped     + b.Presets.Skipped);
+        a.Variables   = new ImportResult(a.Variables.Imported   + b.Variables.Imported,   a.Variables.Skipped   + b.Variables.Skipped);
+        a.Classes     = new ImportResult(a.Classes.Imported     + b.Classes.Imported,     a.Classes.Skipped     + b.Classes.Skipped);
+        a.MissingFiles.AddRange(b.MissingFiles);
+    }
+
+    private static string FormatImportSummary(ImportAllResult r)
+    {
+        var parts = new List<string>();
+        void Add(string label, ImportResult x)
+        {
+            if (x.Imported == 0 && x.Skipped == 0) return;
+            parts.Add(x.Skipped > 0
+                ? $"{x.Imported} {label} ({x.Skipped} skipped)"
+                : $"{x.Imported} {label}");
+        }
+        Add("aliases",     r.Aliases);
+        Add("triggers",    r.Triggers);
+        Add("highlights",  r.Highlights);
+        Add("substitutes", r.Substitutes);
+        Add("gags",        r.Gags);
+        Add("macros",      r.Macros);
+        Add("names",       r.Names);
+        Add("presets",     r.Presets);
+        Add("variables",   r.Variables);
+        Add("classes",     r.Classes);
+
+        var body = parts.Count == 0 ? "nothing imported" : string.Join(", ", parts);
+        return $"[import] {body}.";
     }
 
     private void OnMenuPauseAllScripts(object? sender, RoutedEventArgs e) => _scripts.PauseAll();

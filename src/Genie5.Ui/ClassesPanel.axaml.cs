@@ -1,8 +1,8 @@
-using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Genie4.Core.Classes;
+using Genie4.Core.Import;
 
 namespace Genie5.Ui;
 
@@ -126,49 +126,12 @@ public partial class ClassesPanel : UserControl
         var paths = await dialog.ShowAsync(parent);
         if (paths is null || paths.Length == 0) return;
 
-        var (imported, skipped) = ImportFromCfg(paths[0], _engine);
+        var result = Genie4Importer.ImportClasses(paths[0], _engine, ImportMode.Merge);
         Refresh();
         _onChanged?.Invoke();
-        StatusText.Text = skipped > 0
-            ? $"Imported {imported} class(es), skipped {skipped}."
-            : $"Imported {imported} class(es).";
-    }
-
-    // Parses Genie4 "#class {name} {True|False|on|off}" lines.
-    internal static (int Imported, int Skipped) ImportFromCfg(string path, ClassEngine engine)
-    {
-        var pattern = new Regex(
-            @"^\s*#class\s+\{(?<name>[^{}]*)\}\s+\{(?<state>[^{}]*)\}\s*$",
-            RegexOptions.IgnoreCase);
-
-        int imported = 0, skipped = 0;
-        foreach (var raw in File.ReadAllLines(path))
-        {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith("//") || line.StartsWith("#!")) continue;
-            if (!line.StartsWith("#class", StringComparison.OrdinalIgnoreCase)) continue;
-
-            var m = pattern.Match(line);
-            if (!m.Success) { skipped++; continue; }
-
-            var name  = m.Groups["name"].Value.Trim();
-            var state = m.Groups["state"].Value.Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(name) || name.Equals("default", StringComparison.OrdinalIgnoreCase))
-            {
-                skipped++;
-                continue;
-            }
-
-            bool active = state switch
-            {
-                "true" or "on"  or "yes" or "1" => true,
-                "false" or "off" or "no"  or "0" => false,
-                _ => true,
-            };
-            engine.Set(name, active);
-            imported++;
-        }
-        return (imported, skipped);
+        StatusText.Text = result.Skipped > 0
+            ? $"Imported {result.Imported} class(es), skipped {result.Skipped}."
+            : $"Imported {result.Imported} class(es).";
     }
 
     private void ClearForm()

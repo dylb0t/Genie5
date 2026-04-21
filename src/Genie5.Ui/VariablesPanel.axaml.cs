@@ -1,8 +1,8 @@
 using System;
-using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using Genie4.Core.Import;
 using Genie4.Core.Variables;
 
 namespace Genie5.Ui;
@@ -108,34 +108,11 @@ public partial class VariablesPanel : UserControl
         var paths = await dialog.ShowAsync(parent);
         if (paths is null || paths.Length == 0) return;
 
-        var imported = ImportFromCfg(paths[0], _store);
+        var result = Genie4Importer.ImportVariables(paths[0], _store, ImportMode.Merge);
         _onChanged?.Invoke();
         Refresh();
-        StatusText.Text = $"Imported {imported} variable(s).";
-    }
-
-    // Parses Genie4-style "#var {name} {value}" lines. Skips comments and blanks.
-    internal static int ImportFromCfg(string path, VariableStore store)
-    {
-        var pattern = new Regex(@"^\s*#var\s+\{([^}]*)\}\s+\{(.*)\}\s*$",
-            RegexOptions.IgnoreCase);
-
-        int count = 0;
-        foreach (var raw in File.ReadAllLines(path))
-        {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith("//") || line.StartsWith("#!")) continue;
-
-            var m = pattern.Match(line);
-            if (!m.Success) continue;
-
-            var name  = m.Groups[1].Value;
-            var value = m.Groups[2].Value;
-            if (string.IsNullOrEmpty(name)) continue;
-
-            store.Set(name, value);
-            count++;
-        }
-        return count;
+        StatusText.Text = result.Skipped > 0
+            ? $"Imported {result.Imported} variable(s), skipped {result.Skipped}."
+            : $"Imported {result.Imported} variable(s).";
     }
 }

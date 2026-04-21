@@ -25,6 +25,8 @@ public sealed class HighlightEngine
     public bool RemoveRule(string pattern)
         => _rules.RemoveAll(r => r.Pattern == pattern) > 0;
 
+    public void Clear() => _rules.Clear();
+
     private bool IsActive(HighlightRule rule)
         => rule.IsEnabled && (Classes?.IsActive(rule.ClassName) ?? true);
 

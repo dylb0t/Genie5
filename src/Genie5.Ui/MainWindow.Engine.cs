@@ -201,6 +201,7 @@ public partial class MainWindow
                 // and eventually other UI commands.
                 if (_mapper.TryHandleGoto(hashCmd)) return;
                 if (TryHandleScriptCommand(hashCmd)) return;
+                if (TryHandleClassCommand(hashCmd)) return;
                 // Unknown # commands are silently dropped.
             }));
 

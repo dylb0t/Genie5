@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Genie5.Ui.DialogImportGenie4"
+        Title="Import Genie4 Config"
+        Width="640" Height="620"
+        WindowStartupLocation="CenterOwner">
+
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="16">
+
+    <!-- Directory picker -->
+    <Grid Grid.Row="0" ColumnDefinitions="100,*,Auto" Margin="0,0,0,8">
+      <TextBlock Grid.Column="0" Text="Genie4 folder:" VerticalAlignment="Center"/>
+      <TextBox   Grid.Column="1" Name="FolderBox"
+                 Watermark="Path to Genie4 Config directory"
+                 TextChanged="OnFolderChanged"/>
+      <Button    Grid.Column="2" Content="Browse..." Margin="8,0,0,0"
+                 Click="OnBrowseFolder"/>
+    </Grid>
+
+    <!-- Import mode -->
+    <Border Grid.Row="1"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+            BorderThickness="0,1,0,1" Padding="0,8" Margin="0,0,0,8">
+      <StackPanel Orientation="Horizontal" Spacing="16">
+        <TextBlock Text="Mode:" VerticalAlignment="Center"/>
+        <RadioButton Name="ModeMerge"   GroupName="Mode" Content="Merge (overwrite matches)" IsChecked="True"/>
+        <RadioButton Name="ModeAddOnly" GroupName="Mode" Content="Add only (skip existing)"/>
+        <RadioButton Name="ModeReplace" GroupName="Mode" Content="Replace (clear first)"/>
+      </StackPanel>
+    </Border>
+
+    <!-- Header row for the type list -->
+    <Grid Grid.Row="2" ColumnDefinitions="Auto,140,80,*,Auto" Margin="0,0,0,4">
+      <TextBlock Grid.Column="0" Text="Import" FontWeight="SemiBold" Margin="0,0,12,0"/>
+      <TextBlock Grid.Column="1" Text="Type"   FontWeight="SemiBold"/>
+      <TextBlock Grid.Column="2" Text="Count"  FontWeight="SemiBold"/>
+      <TextBlock Grid.Column="3" Text="File"   FontWeight="SemiBold"/>
+      <TextBlock Grid.Column="4" Text=""/>
+    </Grid>
+
+    <!-- Per-type rows -->
+    <ScrollViewer Grid.Row="3">
+      <StackPanel Name="TypeRows" Spacing="2"/>
+    </ScrollViewer>
+
+    <!-- Status -->
+    <TextBlock Grid.Row="4" Name="StatusText" Foreground="Gray" FontStyle="Italic"
+               Margin="0,8,0,0" Text=" " TextWrapping="Wrap"/>
+
+    <!-- Buttons -->
+    <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,8,0,0">
+      <Button Content="Import" Click="OnImport"/>
+      <Button Content="Cancel" Click="OnCancel"/>
+    </StackPanel>
+
+  </Grid>
+</Window>

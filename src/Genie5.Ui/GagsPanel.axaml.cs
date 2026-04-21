@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Genie4.Core.Gags;
+using Genie4.Core.Import;
 
 namespace Genie5.Ui;
 
@@ -107,49 +108,12 @@ public partial class GagsPanel : UserControl
         var paths = await dialog.ShowAsync(parent);
         if (paths is null || paths.Length == 0) return;
 
-        var (imported, skipped) = ImportFromCfg(paths[0], _engine);
+        var result = Genie4Importer.ImportGags(paths[0], _engine, ImportMode.Merge);
         Refresh();
         _onChanged?.Invoke();
-        StatusText.Text = skipped > 0
-            ? $"Imported {imported} gag(s), skipped {skipped}."
-            : $"Imported {imported} gag(s).";
-    }
-
-    // Parses Genie4 "#gag {pattern} [{class}]" lines with optional /pattern/i
-    // ignore-case suffix.
-    internal static (int Imported, int Skipped) ImportFromCfg(string path, GagEngine engine)
-    {
-        var pattern = new Regex(
-            @"^\s*#gag\s+\{(?<pat>[^{}]*)\}(?:\s+\{(?<cls>[^{}]*)\})?\s*$",
-            RegexOptions.IgnoreCase);
-
-        int imported = 0, skipped = 0;
-        foreach (var raw in File.ReadAllLines(path))
-        {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith("//") || line.StartsWith("#!")) continue;
-            if (!line.StartsWith("#gag", StringComparison.OrdinalIgnoreCase)) continue;
-
-            var m = pattern.Match(line);
-            if (!m.Success) { skipped++; continue; }
-
-            var pat = m.Groups["pat"].Value;
-            bool caseInsensitive = false;
-            if (pat.StartsWith('/')) pat = pat[1..];
-            if (pat.EndsWith("/i", StringComparison.OrdinalIgnoreCase)) { caseInsensitive = true; pat = pat[..^2]; }
-            else if (pat.EndsWith('/')) pat = pat[..^1];
-
-            if (string.IsNullOrEmpty(pat)) { skipped++; continue; }
-            try { _ = new Regex(pat); }
-            catch (RegexParseException) { skipped++; continue; }
-
-            var cls = m.Groups["cls"].Success ? m.Groups["cls"].Value : string.Empty;
-
-            engine.RemoveRule(pat);
-            engine.AddRule(pat, caseSensitive: !caseInsensitive, isEnabled: true, className: cls);
-            imported++;
-        }
-        return (imported, skipped);
+        StatusText.Text = result.Skipped > 0
+            ? $"Imported {result.Imported} gag(s), skipped {result.Skipped}."
+            : $"Imported {result.Imported} gag(s).";
     }
 
     private void ClearForm()

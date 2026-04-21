@@ -52,6 +52,13 @@ public sealed class ClassEngine
         return _classes.Remove(className);
     }
 
+    /// <summary>Removes every class except the always-present "default".</summary>
+    public void Clear()
+    {
+        _classes.Clear();
+        _classes["default"] = true;
+    }
+
     public void ActivateAll()
     {
         foreach (var key in _classes.Keys.ToList()) _classes[key] = true;

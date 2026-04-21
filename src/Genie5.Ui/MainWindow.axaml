@@ -16,6 +16,8 @@
         <MenuItem Header="_Connect..."              Click="OnMenuConnect" />
         <MenuItem Header="Connect Using _Profile..."  Click="OnMenuConnectProfile" />
         <Separator />
+        <MenuItem Header="_Import Genie4 Config..." Click="OnMenuImportGenie4Config" />
+        <Separator />
         <MenuItem Header="_Auto Log"               Name="AutoLogMenuItem"
                   ToggleType="CheckBox"            Click="OnMenuToggleAutoLog" />
         <MenuItem Header="_Auto Reconnect"         IsEnabled="False" />

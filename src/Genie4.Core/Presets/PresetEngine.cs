@@ -38,6 +38,13 @@ public sealed class PresetEngine
     public void Apply(PresetRule rule)
         => _presets[rule.Id] = rule;
 
+    /// <summary>Resets every preset to the baked-in defaults.</summary>
+    public void ResetToDefaults()
+    {
+        _presets.Clear();
+        SetDefaults();
+    }
+
     public PresetRule? Get(string id)
         => _presets.TryGetValue(id, out var r) ? r : null;
 
