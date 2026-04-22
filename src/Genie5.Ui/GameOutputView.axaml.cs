@@ -126,6 +126,8 @@ public partial class GameOutputView : UserControl
             };
             if (!string.IsNullOrEmpty(span.Background))
                 run.Background = ToBrush(span.Background);
+            if (span.Monospace)
+                run.FontFamily = MonoFontFamily;
             block.Inlines!.Add(run);
         }
 
@@ -135,6 +137,9 @@ public partial class GameOutputView : UserControl
         Dispatcher.UIThread.Post(() => OutputScrollViewer.ScrollToEnd(),
             DispatcherPriority.Loaded);
     }
+
+    private static readonly FontFamily MonoFontFamily =
+        new("Cascadia Mono,Consolas,Courier New,monospace");
 
     private static readonly Dictionary<string, IBrush> BrushCache = new(StringComparer.OrdinalIgnoreCase);
 

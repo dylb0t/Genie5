@@ -96,28 +96,43 @@ public static class ScriptParser
             int thenIdx = FindThenKeyword(rest);
             if (thenIdx < 0) continue;
             var afterThen = rest[(thenIdx + 4)..].Trim();
-            if (afterThen.Length > 0) continue; // inline form, no block
-
-            // Detect brace style: next non-empty line is "{" alone.
-            int braceOpen = NextNonEmpty(inst, i + 1);
-            bool useBraces = braceOpen >= 0 && inst.Lines[braceOpen].Trimmed == "{";
+            // "then {" on the same line is a brace block whose '{' happens to
+            // share the if's line. Anything else non-empty is an inline body.
+            bool inlineOpenBrace = afterThen == "{";
+            if (afterThen.Length > 0 && !inlineOpenBrace) continue;
 
             int bodyStart, bodyEnd;
-            if (useBraces)
+            bool useBraces;
+            if (inlineOpenBrace)
             {
-                bodyStart = braceOpen + 1;
-                bodyEnd   = FindMatchingBrace(inst, braceOpen);
-                if (bodyEnd < 0) continue; // unmatched
+                // FindMatchingBrace treats line i as the opener (depth starts
+                // at 1) and scans forward for the matching '}'.
+                useBraces = true;
+                bodyStart = i + 1;
+                bodyEnd   = FindMatchingBrace(inst, i);
+                if (bodyEnd < 0) continue;
             }
             else
             {
-                // Indent-based block: lines indented further than the if.
-                bodyStart = i + 1;
-                bodyEnd   = inst.Lines.Count;
-                for (int j = bodyStart; j < inst.Lines.Count; j++)
+                // Detect brace style: next non-empty line is "{" alone.
+                int braceOpen = NextNonEmpty(inst, i + 1);
+                useBraces = braceOpen >= 0 && inst.Lines[braceOpen].Trimmed == "{";
+                if (useBraces)
                 {
-                    if (inst.Lines[j].Trimmed.Length == 0) continue;
-                    if (inst.Lines[j].Indent <= line.Indent) { bodyEnd = j; break; }
+                    bodyStart = braceOpen + 1;
+                    bodyEnd   = FindMatchingBrace(inst, braceOpen);
+                    if (bodyEnd < 0) continue; // unmatched
+                }
+                else
+                {
+                    // Indent-based block: lines indented further than the if.
+                    bodyStart = i + 1;
+                    bodyEnd   = inst.Lines.Count;
+                    for (int j = bodyStart; j < inst.Lines.Count; j++)
+                    {
+                        if (inst.Lines[j].Trimmed.Length == 0) continue;
+                        if (inst.Lines[j].Indent <= line.Indent) { bodyEnd = j; break; }
+                    }
                 }
             }
 

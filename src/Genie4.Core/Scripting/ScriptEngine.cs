@@ -561,6 +561,14 @@ public sealed class ScriptEngine
             case "gosub":
             {
                 var (label, gosubArgs) = SplitCmd(rest);
+                // Genie4 parity: `gosub clear` wipes the return-address stack
+                // without jumping. Subsequent `return` would then fail.
+                if (label.Trim().Equals("clear", StringComparison.OrdinalIgnoreCase))
+                {
+                    inst.GosubStack.Clear();
+                    DbgEcho(inst, 1, "gosub clear (stack emptied)");
+                    return true;
+                }
                 if (!inst.Labels.TryGetValue(label.Trim(), out var ss))
                 { _echo($"[script] unknown label: {label}"); inst.Running = false; return false; }
                 inst.GosubStack.Push(inst.Pc);
@@ -815,7 +823,10 @@ public sealed class ScriptEngine
     private bool HandleConditional(bool cond, string afterThen,
                                     ScriptInstance inst, int lineNo, int currentIdx)
     {
-        if (afterThen.Length > 0)
+        // "then {" on the same line is a brace block, not an inline body.
+        // The parser records an IfFalseJump for this line just like when the
+        // '{' appears on its own next line.
+        if (afterThen.Length > 0 && afterThen != "{")
         {
             // inline form: execute the after-then as a statement (only when true)
             if (cond) return Dispatch(afterThen, inst, lineNo, currentIdx);
@@ -1086,10 +1097,13 @@ public sealed class ScriptEngine
             if (i + 1 < text.Length && text[i + 1] == c)
             { doubleEval = true; nameStart = i + 2; }
             int j = nameStart;
-            // Allow letters, digits, _ and . in variable names so identifiers
-            // like Athletics.Ranks resolve as a single token.
+            // Variable names allow letters, digits, _ and .  During the INNER
+            // pass of a double-eval, '.' terminates the name so that "%%a.b"
+            // resolves %a first, then appends ".b" to form the outer name —
+            // matching Genie4's right-to-left expansion (e.g. %%spell.Prep).
             while (j < text.Length &&
-                   (char.IsLetterOrDigit(text[j]) || text[j] == '_' || text[j] == '.'))
+                   (char.IsLetterOrDigit(text[j]) || text[j] == '_' ||
+                    (!doubleEval && text[j] == '.')))
                 j++;
             if (j == nameStart) { sb.Append(c); continue; }
             var name = text[nameStart..j];
@@ -1114,11 +1128,18 @@ public sealed class ScriptEngine
                 value = inst.Vars.TryGetValue(name, out var lv) ? lv : string.Empty;
             if (doubleEval && !string.IsNullOrEmpty(value))
             {
-                // Use the fetched value as the key for a second lookup,
-                // pulling from the same scope as the original sigil.
+                // The resolved value becomes the PREFIX of the outer name.
+                // If the text continues with identifier chars (e.g. ".Prep"),
+                // append them so "%%spell.Prep" → %<value-of-spell>.Prep.
+                int k = j;
+                while (k < text.Length &&
+                       (char.IsLetterOrDigit(text[k]) || text[k] == '_' || text[k] == '.'))
+                    k++;
+                var outerName = value + text[j..k];
                 value = c == '$'
-                    ? (Globals.TryGetValue(value, out var g2) ? g2 : string.Empty)
-                    : (inst.Vars.TryGetValue(value, out var l2) ? l2 : string.Empty);
+                    ? (Globals.TryGetValue(outerName, out var g2) ? g2 : string.Empty)
+                    : (inst.Vars.TryGetValue(outerName, out var l2) ? l2 : string.Empty);
+                j = k;
             }
             // Array indexing: %Bags(0) splits the pipe-delimited value and
             // returns the element at that index (0-based). The index itself

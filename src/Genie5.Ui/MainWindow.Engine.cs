@@ -246,11 +246,13 @@ public partial class MainWindow
             }
             target ??= _gameOutputVm;
 
+            var (text, mono) = TryStripMono(msg);
             var line = new RenderLine();
             line.Spans.Add(new AnsiSpan
             {
-                Text       = msg,
+                Text       = text,
                 Foreground = color ?? "Default",
+                Monospace  = mono,
             });
             target.AppendLine(line);
         };
@@ -536,7 +538,11 @@ public partial class MainWindow
         public UiHost(MainWindow window) => _window = window;
 
         public void Echo(string text)
-            => Avalonia.Threading.Dispatcher.UIThread.Post(() => _window.AppendOutput("[echo] " + text));
+        {
+            var (payload, mono) = TryStripMono(text);
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => _window.AppendOutput("[echo] " + payload, mono));
+        }
 
         public void SendToGame(string text, bool userInput = false, string origin = "")
         {
@@ -560,4 +566,12 @@ public partial class MainWindow
         var idx = itemName.LastIndexOf(' ');
         return idx < 0 ? itemName : itemName[(idx + 1)..];
     }
+
+    // Genie4 parity: a leading "mono " on echo text is consumed and the line
+    // renders in monospace. See FormMain.EchoText / EchoColorText in the
+    // reference source.
+    private static (string Text, bool Mono) TryStripMono(string s)
+        => s.StartsWith("mono ", StringComparison.OrdinalIgnoreCase)
+            ? (s[5..], true)
+            : (s, false);
 }

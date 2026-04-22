@@ -6,6 +6,7 @@ public sealed class AnsiSpan
     public string Foreground { get; set; } = "Default";
     public string Background { get; set; } = "";
     public bool Bold { get; set; }
+    public bool Monospace { get; set; }
 }
 
 public sealed class RenderLine

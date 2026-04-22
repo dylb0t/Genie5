@@ -171,6 +171,14 @@ public partial class MainWindow : Window
         ApplyHighlightAndAppend(parsed);
     }
 
+    internal void AppendOutput(string text, bool monospace)
+    {
+        var parsed = AnsiParser.Parse(text);
+        if (monospace)
+            foreach (var span in parsed.Spans) span.Monospace = true;
+        ApplyHighlightAndAppend(parsed);
+    }
+
     // Called for GSL-parsed lines with styled segments
     internal void AppendSegments(IReadOnlyList<GslSegment> segments)
     {
