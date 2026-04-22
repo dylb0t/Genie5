@@ -129,6 +129,14 @@ public sealed class ScriptEngine
         inst.Vars["0"] = string.Join(" ", args);
         inst.Vars["scriptname"] = name;
 
+        // Seed the $-scope with the same values so $1..$9 work at the top
+        // level. Gosubs push new frames onto this stack without touching %N.
+        var initDollar = new string[10];
+        initDollar[0] = inst.Vars["0"];
+        for (int i = 0; i < 9; i++)
+            initDollar[i + 1] = i < args.Count ? args[i] : string.Empty;
+        inst.DollarStack.Push(initDollar);
+
         _instances.Add(inst);
         _echo($"[script] {name} started");
         Tick();
@@ -364,7 +372,14 @@ public sealed class ScriptEngine
             if (!fire) continue;
             DbgEcho(inst, 5, $"action fired: \"{act.Command}\" (pattern: \"{act.Pattern}\")");
             var sub = SubstituteVars(act.Command, inst);
-            try { Dispatch(sub, inst, 0, -1); }
+            // Action bodies commonly chain multiple statements with ';' (e.g.
+            // `shift; math depth subtract 1; put #echo ...`) — split and
+            // dispatch each so the whole chain runs, not just the head.
+            try
+            {
+                foreach (var stmt in SplitSemicolons(sub))
+                    Dispatch(stmt, inst, 0, -1);
+            }
             catch (Exception ex)
             { _echo($"[script] {inst.Name} action error: {ex.Message}"); }
         }
@@ -457,8 +472,20 @@ public sealed class ScriptEngine
             }
 
             case "else":
+                // Block-form else: jump table already placed by the parser.
                 if (inst.ElseJump.TryGetValue(currentIdx, out var elseTarget))
+                {
                     inst.Pc = elseTarget;
+                    return true;
+                }
+                // Inline-form else: `else <stmt>` on its own line trailing an
+                // `if ... then <stmt>`. When reached by fall-through, the
+                // preceding if's condition was false, so the else body runs.
+                // (When true, the `then` branch jumps away and we never get
+                // here.) Matches Genie4's split of `else <body>` into two
+                // lines: `else` + `<body>`.
+                if (rest.Length > 0)
+                    return Dispatch(rest, inst, lineNo, currentIdx);
                 return true;
 
             case "put":
@@ -575,15 +602,18 @@ public sealed class ScriptEngine
                 inst.Pc = ss + 1;
                 DbgEcho(inst, 1, $"gosub {label.Trim()} → line {ss + 1}" +
                     (string.IsNullOrEmpty(gosubArgs) ? "" : $" args: {gosubArgs}"));
-                // Gosub arguments: %0/$0 = full arg string, %1/$1..%9/$9 = individual args.
-                // These overwrite the caller's values; Genie4 does the same.
+                // Gosub arguments populate $0..$9 on a NEW stack frame — they
+                // do NOT touch %0..%9 (script args). On return the frame is
+                // popped, restoring the caller's $-scope. Matches Genie4.
+                var frame = new string[10];
+                frame[0] = gosubArgs ?? string.Empty;
                 if (!string.IsNullOrEmpty(gosubArgs))
                 {
-                    inst.Vars["0"] = gosubArgs;
                     var parts = gosubArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                     for (int a = 0; a < 9; a++)
-                        inst.Vars[(a + 1).ToString()] = a < parts.Length ? parts[a] : string.Empty;
+                        frame[a + 1] = a < parts.Length ? parts[a] : string.Empty;
                 }
+                inst.DollarStack.Push(frame);
                 return true;
             }
 
@@ -591,6 +621,7 @@ public sealed class ScriptEngine
                 if (inst.GosubStack.Count > 0)
                 {
                     var retPc = inst.GosubStack.Pop();
+                    if (inst.DollarStack.Count > 1) inst.DollarStack.Pop();
                     DbgEcho(inst, 1, $"return → line {retPc}");
                     inst.Pc = retPc;
                 }
@@ -967,10 +998,9 @@ public sealed class ScriptEngine
         // Locate " when " or " whenre " outside of quoted strings.
         int whenIdx = FindKeywordOutsideQuotes(trimmed, "when");
         int whenreIdx = FindKeywordOutsideQuotes(trimmed, "whenre");
-        bool isRegex = false;
         int kwIdx, kwLen;
         if (whenreIdx >= 0 && (whenIdx < 0 || whenreIdx <= whenIdx))
-        { kwIdx = whenreIdx; kwLen = 6; isRegex = true; }
+        { kwIdx = whenreIdx; kwLen = 6; }
         else if (whenIdx >= 0)
         { kwIdx = whenIdx; kwLen = 4; }
         else
@@ -987,15 +1017,20 @@ public sealed class ScriptEngine
             return;
         }
 
-        // 'action X when eval <expr>' — eval form. Fires each tick where expr
-        // transitions from false → true (rising edge), so repeated matches on
-        // a persistent truthy condition don't spam.
+        // Genie4 semantics: `when` patterns are always regex (same as `whenre`);
+        // variables in the pattern are substituted at registration time. The
+        // only exception is the `eval <expr>` form, which is evaluated live.
         bool isEval = false;
-        if (!isRegex && pattern.StartsWith("eval ", StringComparison.OrdinalIgnoreCase))
+        if (pattern.StartsWith("eval ", StringComparison.OrdinalIgnoreCase))
         {
             isEval  = true;
             pattern = pattern[5..].Trim();
         }
+        else
+        {
+            pattern = SubstituteVars(pattern, inst);
+        }
+        bool isRegex = !isEval;
 
         inst.Actions.Add(new ScriptAction
         {
@@ -1117,9 +1152,15 @@ public sealed class ScriptEngine
             }
             else if (c == '$')
             {
-                // $0..$9 are script-local (gosub args / regex captures) —
-                // check inst.Vars first before falling through to Globals.
-                if (inst.Vars.TryGetValue(name, out var sv) && !string.IsNullOrEmpty(sv))
+                // $0..$9 are numeric slots from the top DollarStack frame
+                // (gosub args or the most recent regex captures). All other
+                // $names fall back to script-local Vars, then Globals.
+                if (name.Length == 1 && char.IsDigit(name[0]) &&
+                    inst.DollarStack.Count > 0)
+                {
+                    value = inst.DollarStack.Peek()[name[0] - '0'] ?? string.Empty;
+                }
+                else if (inst.Vars.TryGetValue(name, out var sv) && !string.IsNullOrEmpty(sv))
                     value = sv;
                 else
                     value = Globals.TryGetValue(name, out var gv) ? gv : string.Empty;
@@ -1183,9 +1224,20 @@ public sealed class ScriptEngine
         if (!m.Success) return false;
         if (capture)
         {
-            inst.Vars["0"] = m.Value;
+            // Regex captures land in the $-scope ($0=full match, $1..$9=groups)
+            // on the current frame — they do NOT overwrite script args (%N).
+            var frame = inst.DollarStack.Count > 0
+                ? inst.DollarStack.Peek()
+                : null;
+            if (frame is null)
+            {
+                frame = new string[10];
+                inst.DollarStack.Push(frame);
+            }
+            for (int i = 0; i < 10; i++) frame[i] = string.Empty;
+            frame[0] = m.Value;
             for (int i = 1; i < m.Groups.Count && i <= 9; i++)
-                inst.Vars[i.ToString()] = m.Groups[i].Value;
+                frame[i] = m.Groups[i].Value;
         }
         return true;
     }

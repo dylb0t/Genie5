@@ -12,6 +12,12 @@ public sealed class ScriptInstance
     public Dictionary<string, string> Vars = new(StringComparer.OrdinalIgnoreCase);
     public Stack<int> GosubStack = new();
 
+    // $0..$9 are a SEPARATE scope from %0..%9. They hold gosub arguments or
+    // the most recent regex capture groups, and are pushed/popped with the
+    // gosub stack — unlike script args (%N), which live in Vars for the
+    // entire script lifetime. Matches Genie4's per-frame ArgList semantics.
+    public Stack<string[]> DollarStack = new();
+
     // if-block jump tables (built at parse time)
     public Dictionary<int, int> IfFalseJump = new(); // if-line idx → target when condition false
     public Dictionary<int, int> ElseJump   = new(); // else-line idx → target after else block

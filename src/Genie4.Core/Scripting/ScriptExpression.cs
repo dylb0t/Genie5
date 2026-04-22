@@ -384,9 +384,20 @@ internal sealed class ScriptExpression
                 try { m = Regex.Match(s, pat); }
                 catch (Exception ex) { throw new Exception($"matchre: bad regex: {ex.Message}"); }
                 if (!m.Success) return false;
-                _inst.Vars["0"] = m.Value;
+                // Captures land in $0..$9 on the current DollarStack frame —
+                // script args (%N) must remain untouched.
+                var frame = _inst.DollarStack.Count > 0
+                    ? _inst.DollarStack.Peek()
+                    : null;
+                if (frame is null)
+                {
+                    frame = new string[10];
+                    _inst.DollarStack.Push(frame);
+                }
+                for (int i = 0; i < 10; i++) frame[i] = string.Empty;
+                frame[0] = m.Value;
                 for (int i = 1; i < m.Groups.Count && i <= 9; i++)
-                    _inst.Vars[i.ToString()] = m.Groups[i].Value;
+                    frame[i] = m.Groups[i].Value;
                 return true;
             }
             case "contains":   return A(0).IndexOf(A(1), StringComparison.OrdinalIgnoreCase) >= 0;
