@@ -9,6 +9,7 @@ public sealed class RoomViewModel : Document
     private string _roomDescription = string.Empty;
     private string _roomObjects     = string.Empty;
     private string _roomPlayers     = string.Empty;
+    private string _roomExits       = string.Empty;
 
     public string RoomTitle
     {
@@ -34,6 +35,12 @@ public sealed class RoomViewModel : Document
         private set => SetProperty(ref _roomPlayers, value);
     }
 
+    public string RoomExits
+    {
+        get => _roomExits;
+        private set => SetProperty(ref _roomExits, value);
+    }
+
     public RoomViewModel()
     {
         Id       = "Room";
@@ -50,6 +57,9 @@ public sealed class RoomViewModel : Document
             RoomDescription = state.RoomDescription;
             RoomObjects     = state.RoomObjects;
             RoomPlayers     = state.RoomPlayers;
+            RoomExits       = state.Exits.Count > 0
+                ? "Obvious paths: " + string.Join(", ", state.Exits) + "."
+                : string.Empty;
         };
     }
 }

@@ -44,6 +44,12 @@
                    IsVisible="{Binding RoomObjects,
                        Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
+        <TextBlock Text="{Binding RoomExits}"
+                   Foreground="#7FB069"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding RoomExits,
+                       Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
       </StackPanel>
     </ScrollViewer>
 

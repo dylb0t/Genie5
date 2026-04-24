@@ -356,6 +356,7 @@ public sealed class ScriptEngine
         {
             if (!act.Enabled) continue;
             bool fire;
+            string[]? captures = null;
             if (act.IsEval)
             {
                 bool cur;
@@ -367,21 +368,58 @@ public sealed class ScriptEngine
             else
             {
                 if (line is null) continue;
-                fire = TryMatch(line, act.Pattern, act.IsRegex, inst, capture: true);
+                // Don't let TryMatch overwrite the script's current $-frame.
+                // Action bodies must see ONLY their own regex captures, not
+                // whatever $1..$9 happened to hold in the caller's scope
+                // (e.g. script args from `.travel leth`).
+                fire = TryMatch(line, act.Pattern, act.IsRegex, inst, capture: false);
+                if (fire && act.IsRegex)
+                {
+                    captures = new string[10];
+                    try
+                    {
+                        var m = Regex.Match(line, act.Pattern, RegexOptions.IgnoreCase);
+                        if (m.Success)
+                        {
+                            captures[0] = m.Value;
+                            for (int i = 1; i < m.Groups.Count && i <= 9; i++)
+                                captures[i] = m.Groups[i].Value;
+                        }
+                    }
+                    catch { /* pattern errored at TryMatch too; captures stay empty */ }
+                    for (int i = 0; i < 10; i++) captures[i] ??= string.Empty;
+                }
             }
             if (!fire) continue;
             DbgEcho(inst, 5, $"action fired: \"{act.Command}\" (pattern: \"{act.Pattern}\")");
-            var sub = SubstituteVars(act.Command, inst);
-            // Action bodies commonly chain multiple statements with ';' (e.g.
-            // `shift; math depth subtract 1; put #echo ...`) — split and
-            // dispatch each so the whole chain runs, not just the head.
+
+            // Push a dedicated $-frame for the body so $1..$9 refer to the
+            // regex captures in isolation. Eval actions and literal triggers
+            // have no captures, so the pushed frame is empty — either way
+            // the caller's script-arg frame is preserved, not clobbered.
+            bool framePushed = false;
+            if (captures != null || !act.IsEval)
+            {
+                inst.DollarStack.Push(captures ?? new string[10]);
+                framePushed = true;
+            }
             try
             {
-                foreach (var stmt in SplitSemicolons(sub))
-                    Dispatch(stmt, inst, 0, -1);
+                // Action bodies commonly chain multiple statements with ';'
+                // (e.g. `var kronars $1; eval kronars replacere("%kronars", ",", "")`).
+                // Split first, then substitute each statement at dispatch
+                // time so %-references to vars written earlier in the chain
+                // see the fresh value, not the pre-fire one.
+                foreach (var stmt in SplitSemicolons(act.Command))
+                    Dispatch(SubstituteVars(stmt, inst), inst, 0, -1);
             }
             catch (Exception ex)
             { _echo($"[script] {inst.Name} action error: {ex.Message}"); }
+            finally
+            {
+                if (framePushed && inst.DollarStack.Count > 0)
+                    inst.DollarStack.Pop();
+            }
         }
     }
 
@@ -430,7 +468,17 @@ public sealed class ScriptEngine
         // jumps over them; at runtime they're no-ops.
         if (t == "{" || t == "}") return true;
 
-        var substituted = SubstituteVars(t, inst);
+        // `action ... when <pattern>` is registered raw — HandleAction
+        // substitutes the pattern itself at registration time, but the
+        // command body must keep its $1/%var references intact so they
+        // resolve against the action's regex captures when it later fires.
+        // Pre-substituting here would bake the script's current scope into
+        // the action body and lose the capture references entirely.
+        bool isActionStmt = t.Length >= 7 &&
+                            (t.StartsWith("action ", StringComparison.OrdinalIgnoreCase) ||
+                             t.Equals("action",     StringComparison.OrdinalIgnoreCase));
+
+        var substituted = isActionStmt ? t : SubstituteVars(t, inst);
 
         // Level 10: trace every executed line
         DbgEcho(inst, 10, $"{inst.Name}:{line.LineNumber} {substituted}");
@@ -896,7 +944,9 @@ public sealed class ScriptEngine
             }
             case "#echo":
             {
-                // #echo [>Window] [#RRGGBB] message
+                // #echo [>Window] [#RRGGBB | ColorName] message
+                // Mirrors Genie4: foreground may be a hex code or a KnownColor name
+                // (e.g. Crimson, DodgerBlue) — the downstream Brush.Parse handles both.
                 string? window = null;
                 string? color  = null;
                 var msg = rest;
@@ -905,7 +955,7 @@ public sealed class ScriptEngine
                     var (tok, after) = SplitCmd(msg);
                     if (tok.Length > 0 && tok[0] == '>')
                     { window = tok[1..]; msg = after; continue; }
-                    if (tok.Length > 0 && tok[0] == '#' && tok.Length >= 4)
+                    if (IsEchoColor(tok))
                     { color = tok; msg = after; continue; }
                     break;
                 }
@@ -988,7 +1038,10 @@ public sealed class ScriptEngine
 
         if (trimmed.StartsWith("remove ", StringComparison.OrdinalIgnoreCase))
         {
-            var pat = trimmed[7..].Trim();
+            // Pattern is matched against the registered (substituted) pattern,
+            // so substitute here too — `action remove %move_OK` removes the
+            // action whose stored pattern is the resolved %move_OK regex.
+            var pat = SubstituteVars(trimmed[7..].Trim(), inst);
             int n = inst.Actions.RemoveAll(a =>
                 string.Equals(a.Pattern, pat, StringComparison.OrdinalIgnoreCase));
             if (n == 0) _echo($"[script] action: no trigger matched '{pat}'");
@@ -1048,6 +1101,51 @@ public sealed class ScriptEngine
 
     private static bool LabelMatch(ScriptAction a, string label)
         => string.Equals(a.Label, label, StringComparison.OrdinalIgnoreCase);
+
+    // KnownColor names between Transparent and ButtonFace, matching Genie4's
+    // ColorCode.IsColorString filter — system UI colors are excluded so only
+    // web-style named colors are accepted as #echo foregrounds.
+    private static readonly HashSet<string> NamedColors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "AliceBlue","AntiqueWhite","Aqua","Aquamarine","Azure","Beige","Bisque",
+        "Black","BlanchedAlmond","Blue","BlueViolet","Brown","BurlyWood","CadetBlue",
+        "Chartreuse","Chocolate","Coral","CornflowerBlue","Cornsilk","Crimson","Cyan",
+        "DarkBlue","DarkCyan","DarkGoldenrod","DarkGray","DarkGreen","DarkKhaki",
+        "DarkMagenta","DarkOliveGreen","DarkOrange","DarkOrchid","DarkRed","DarkSalmon",
+        "DarkSeaGreen","DarkSlateBlue","DarkSlateGray","DarkTurquoise","DarkViolet",
+        "DeepPink","DeepSkyBlue","DimGray","DodgerBlue","Firebrick","FloralWhite",
+        "ForestGreen","Fuchsia","Gainsboro","GhostWhite","Gold","Goldenrod","Gray",
+        "Green","GreenYellow","Honeydew","HotPink","IndianRed","Indigo","Ivory","Khaki",
+        "Lavender","LavenderBlush","LawnGreen","LemonChiffon","LightBlue","LightCoral",
+        "LightCyan","LightGoldenrodYellow","LightGray","LightGreen","LightPink",
+        "LightSalmon","LightSeaGreen","LightSkyBlue","LightSlateGray","LightSteelBlue",
+        "LightYellow","Lime","LimeGreen","Linen","Magenta","Maroon","MediumAquamarine",
+        "MediumBlue","MediumOrchid","MediumPurple","MediumSeaGreen","MediumSlateBlue",
+        "MediumSpringGreen","MediumTurquoise","MediumVioletRed","MidnightBlue",
+        "MintCream","MistyRose","Moccasin","NavajoWhite","Navy","OldLace","Olive",
+        "OliveDrab","Orange","OrangeRed","Orchid","PaleGoldenrod","PaleGreen",
+        "PaleTurquoise","PaleVioletRed","PapayaWhip","PeachPuff","Peru","Pink","Plum",
+        "PowderBlue","Purple","Red","RosyBrown","RoyalBlue","SaddleBrown","Salmon",
+        "SandyBrown","SeaGreen","SeaShell","Sienna","Silver","SkyBlue","SlateBlue",
+        "SlateGray","Snow","SpringGreen","SteelBlue","Tan","Teal","Thistle","Tomato",
+        "Turquoise","Violet","Wheat","White","WhiteSmoke","Yellow","YellowGreen",
+    };
+
+    private static bool IsEchoColor(string tok)
+    {
+        if (string.IsNullOrEmpty(tok)) return false;
+        if (tok[0] == '#' && tok.Length >= 4)
+        {
+            for (int i = 1; i < tok.Length; i++)
+            {
+                var c = tok[i];
+                bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                if (!hex) return false;
+            }
+            return true;
+        }
+        return NamedColors.Contains(tok);
+    }
 
     private static int FindKeywordOutsideQuotes(string s, string keyword)
     {

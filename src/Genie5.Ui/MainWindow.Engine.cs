@@ -316,6 +316,23 @@ public partial class MainWindow
                     }
                 }
 
+                // Mirror room component state into script globals so scripts
+                // can read $roomobjs / $roomplayers / $roomdesc / $roomextras
+                // (matches Genie4 variable names).
+                foreach (var ev in events)
+                {
+                    if (ev is ComponentEvent ce &&
+                        ce.Id.StartsWith("room ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var key = ce.Id.Replace(" ", string.Empty).ToLowerInvariant();
+                        _scripts.Globals[key] = ce.Text ?? string.Empty;
+                    }
+                    else if (ev is CompassEvent compass)
+                    {
+                        _scripts.Globals["roomexits"] = string.Join(", ", compass.Exits);
+                    }
+                }
+
                 // Route container/inv events to the inv stream window.
                 foreach (var ev in events)
                 {

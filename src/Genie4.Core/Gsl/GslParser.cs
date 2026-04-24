@@ -153,10 +153,32 @@ public sealed class GslParser
                 case "component" when _pendingComponentId is not null:
                 case "left"      when _pendingComponentId == "lhand":
                 case "right"     when _pendingComponentId == "rhand":
-                    ctx.Events.Add(new ComponentEvent(_pendingComponentId, _pendingComponentText.ToString().Trim()));
+                {
+                    var compTxt = _pendingComponentText.ToString().Trim();
+                    ctx.Events.Add(new ComponentEvent(_pendingComponentId, compTxt));
+                    // Room-related components carry user-visible text (room objs,
+                    // room players, room desc, room extras). Mirror that into
+                    // the main game output so it isn't silently swallowed by the
+                    // room-panel routing — the structured event still updates
+                    // the room window.
+                    if (compTxt.Length > 0 &&
+                        _pendingComponentId.StartsWith("room ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ctx.Flush();
+                        var presetId = _pendingComponentId.Replace(" ", string.Empty).ToLowerInvariant();
+                        var rule = _presets.Get(presetId);
+                        var fg   = rule?.ForegroundColor;
+                        var bg   = rule?.BackgroundColor ?? string.Empty;
+                        ctx.Segments.Add(new GslSegment(
+                            compTxt + "\n",
+                            ctx.Bold,
+                            fg == "Default" ? string.Empty : (fg ?? string.Empty),
+                            bg));
+                    }
                     _pendingComponentId = null;
                     _pendingComponentText.Clear();
                     break;
+                }
                 case "inv" when _pendingInvId is not null:
                     ctx.Events.Add(new InvLineEvent(_pendingInvId, _pendingInvText.ToString().Trim()));
                     _pendingInvId = null;

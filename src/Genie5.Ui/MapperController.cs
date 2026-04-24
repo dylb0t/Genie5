@@ -158,6 +158,7 @@ public sealed class MapperController
     private readonly LinkedList<string> _pathQueue = new();
     private MapNode? _walkDestination;
     private bool     _walking;
+    private bool     _scriptMode;        // true while an external script owns the walk
     private int      _inFlight;
     private int      _consecutiveFailures;
     private int      _lastArrivalNodeId = -1;
@@ -203,6 +204,11 @@ public sealed class MapperController
     public void OnGameLine(string line)
     {
         if (string.IsNullOrEmpty(line)) return;
+
+        // Script mode: the running script owns movement, failure recovery, and
+        // replanning. The built-in engine must stay out of the way or it will
+        // queue its own commands and fight the script.
+        if (_scriptMode) return;
 
         // Detect movement failures while walking.
         if (_walking && IsMovementFailure(line))
@@ -258,6 +264,10 @@ public sealed class MapperController
     public void OnPrompt()
     {
         if (!_walking) return;
+        // Script mode: arrival/failure are reported via OnAutoMapperScriptFinished.
+        // The mapper never pumps its own moves, so prompt-driven bookkeeping
+        // (in-flight, Pump, ReplanFromCurrent) must be skipped.
+        if (_scriptMode) return;
         if (_inFlight > 0) _inFlight--;
 
         if (_engine.CurrentNode != null && _walkDestination != null &&
@@ -398,6 +408,16 @@ public sealed class MapperController
             return;
         }
 
+        if (_scriptMode && RunScript != null)
+        {
+            // Hand the fresh path back to the script and stay out of the way.
+            var args = path.ToArray();
+            _appendOutput($"[mapper] Replanning via {GotoScriptName}: {args.Length} moves");
+            DebugLog($"script replan — relaunching {GotoScriptName} with {args.Length} moves");
+            RunScript(GotoScriptName, args);
+            return;
+        }
+
         _pathQueue.Clear();
         foreach (var move in path) _pathQueue.AddLast(move);
         Pump();
@@ -448,6 +468,7 @@ public sealed class MapperController
     private void StopWalk()
     {
         _walking              = false;
+        _scriptMode           = false;
         _walkDestination      = null;
         _inFlight             = 0;
         _consecutiveFailures  = 0;
@@ -464,9 +485,12 @@ public sealed class MapperController
         _walking         = true;
         _inFlight        = 0;
 
-        // Script mode: launch the configured script with the calculated moves.
+        // Script mode: hand the calculated moves off to the configured script
+        // and back out entirely. The script owns movement, type-ahead, failure
+        // recovery, and arrival detection from here until ScriptFinished.
         if (UseScriptForGoto && RunScript != null)
         {
+            _scriptMode = true;
             var args = path.ToArray();
             _appendOutput($"[mapper] Launching {GotoScriptName} with {args.Length} moves: {string.Join(" ", args.Take(10))}{(args.Length > 10 ? "..." : "")}");
             DebugLog($"launching {GotoScriptName} script with {args.Length} moves");
