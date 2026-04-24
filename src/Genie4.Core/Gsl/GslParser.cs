@@ -156,13 +156,15 @@ public sealed class GslParser
                 {
                     var compTxt = _pendingComponentText.ToString().Trim();
                     ctx.Events.Add(new ComponentEvent(_pendingComponentId, compTxt));
-                    // Room-related components carry user-visible text (room objs,
-                    // room players, room desc, room extras). Mirror that into
-                    // the main game output so it isn't silently swallowed by the
-                    // room-panel routing — the structured event still updates
-                    // the room window.
+                    // Room-related components (room objs, desc, extras) carry
+                    // user-visible text that's useful in the main game output.
+                    // Mirror it here so it isn't silently swallowed by room-
+                    // panel routing. "room players" is deliberately excluded —
+                    // it refreshes on every arrival/departure and would spam
+                    // the output; MainWindow re-emits it only after a `look`.
                     if (compTxt.Length > 0 &&
-                        _pendingComponentId.StartsWith("room ", StringComparison.OrdinalIgnoreCase))
+                        _pendingComponentId.StartsWith("room ", StringComparison.OrdinalIgnoreCase) &&
+                        !_pendingComponentId.Equals("room players", StringComparison.OrdinalIgnoreCase))
                     {
                         ctx.Flush();
                         var presetId = _pendingComponentId.Replace(" ", string.Empty).ToLowerInvariant();

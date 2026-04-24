@@ -51,6 +51,22 @@ public partial class MainWindow
     // Prompt suppression: only show the prompt when output or a command preceded it.
     private bool _outputSinceLastPrompt  = false;
     private bool _commandSinceLastPrompt = false;
+    // True while the server is expected to emit a fresh room snapshot in
+    // response to a `look`/`l`. Used to gate mirroring of room components
+    // (e.g. "Also here:") into the main game window — those events also fire
+    // on spontaneous refreshes (someone entering the room) and we don't want
+    // to spam the output on every refresh. Cleared on the next prompt.
+    private bool _lookRequested          = false;
+
+    private void MarkCommandSent(string cmd)
+    {
+        var t = cmd.Trim();
+        if (t.Equals("look", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("l",    StringComparison.OrdinalIgnoreCase))
+        {
+            _lookRequested = true;
+        }
+    }
 
     private string DataPath(string file)
         => Path.Combine(_dirService.Current.BasePath, file);
@@ -191,6 +207,7 @@ public partial class MainWindow
             {
                 _mapperEngine?.OnCommandSent(cmd);
                 _commandSinceLastPrompt = true;
+                MarkCommandSent(cmd);
                 _ = _client.SendAsync(cmd);
             },
             AppendOutput,
@@ -318,7 +335,11 @@ public partial class MainWindow
 
                 // Mirror room component state into script globals so scripts
                 // can read $roomobjs / $roomplayers / $roomdesc / $roomextras
-                // (matches Genie4 variable names).
+                // (matches Genie4 variable names). Also mirror "Also here: …"
+                // (room players) to the main game output, but only when the
+                // user explicitly asked for a room refresh with `look`/`l` —
+                // it fires on every arrival/departure and would otherwise
+                // spam the window.
                 foreach (var ev in events)
                 {
                     if (ev is ComponentEvent ce &&
@@ -326,6 +347,19 @@ public partial class MainWindow
                     {
                         var key = ce.Id.Replace(" ", string.Empty).ToLowerInvariant();
                         _scripts.Globals[key] = ce.Text ?? string.Empty;
+
+                        if (_lookRequested &&
+                            ce.Id.Equals("room players", StringComparison.OrdinalIgnoreCase) &&
+                            !string.IsNullOrEmpty(ce.Text))
+                        {
+                            var line = new RenderLine();
+                            line.Spans.Add(new AnsiSpan
+                            {
+                                Text       = ce.Text,
+                                Foreground = "Default",
+                            });
+                            _gameOutputVm.AppendLine(line);
+                        }
                     }
                     else if (ev is CompassEvent compass)
                     {
@@ -379,6 +413,7 @@ public partial class MainWindow
                     var show = _outputSinceLastPrompt || _commandSinceLastPrompt;
                     _outputSinceLastPrompt  = false;
                     _commandSinceLastPrompt = false;
+                    _lookRequested          = false;
                     if (!show) return;
                 }
 
@@ -566,6 +601,7 @@ public partial class MainWindow
             _window._mapperEngine?.OnCommandSent(text);
             _window._scripts?.Extensions.DispatchCommand(text);
             _window._commandSinceLastPrompt = true;
+            _window.MarkCommandSent(text);
             _ = _window._client.SendAsync(text);
         }
 
