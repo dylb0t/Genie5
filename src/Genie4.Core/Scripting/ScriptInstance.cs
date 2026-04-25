@@ -1,6 +1,6 @@
 namespace Genie4.Core.Scripting;
 
-public enum PauseMode { None, Pause, Wait, Delay }
+public enum PauseMode { None, Pause, Wait, Delay, Move }
 
 public sealed record ScriptLine(int LineNumber, string Origin, string Raw, string Trimmed, int Indent);
 
@@ -19,8 +19,15 @@ public sealed class ScriptInstance
     public Stack<string[]> DollarStack = new();
 
     // if-block jump tables (built at parse time)
-    public Dictionary<int, int> IfFalseJump = new(); // if-line idx → target when condition false
-    public Dictionary<int, int> ElseJump   = new(); // else-line idx → target after else block
+    public Dictionary<int, int> IfFalseJump = new(); // if/elseif line idx → target when condition false
+    public Dictionary<int, int> ElseJump   = new(); // else line idx → target after else block
+    // When a closing '}' belongs to a true branch inside an if/elseif chain,
+    // it must skip over the remaining elseif/else branches. Keyed on the
+    // '}' line idx; value is the first line past the whole chain.
+    public Dictionary<int, int> BraceEndJump = new();
+    // When a closing '}' terminates a `while`'s body, control returns to
+    // the while-line so the condition is re-evaluated.
+    public Dictionary<int, int> WhileBackJump = new();
 
     public int  Pc;
     public bool Running = true;

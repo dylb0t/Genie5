@@ -333,6 +333,13 @@ public partial class MainWindow
                     }
                 }
 
+                // Wake any `move`-paused scripts the moment a new room title
+                // arrives — matches Genie4's TriggerMove. The RoomTitleEvent
+                // already populates GslGameState.RoomTitle, so globals are
+                // in sync by the time the script resumes.
+                if (events.Any(e => e is RoomTitleEvent))
+                    _scripts.OnRoomChanged();
+
                 // Mirror room component state into script globals so scripts
                 // can read $roomobjs / $roomplayers / $roomdesc / $roomextras
                 // (matches Genie4 variable names). Also mirror "Also here: …"

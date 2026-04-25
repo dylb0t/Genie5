@@ -124,6 +124,21 @@ public sealed class ScriptEngine
             return false;
         }
 
+        // Reload semantics: starting a script that's already running stops
+        // the existing instance and replaces it with the new one. Matches
+        // Genie4's behaviour and avoids two copies fighting over the same
+        // game state, action triggers, and type-ahead budget.
+        for (int i = _instances.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(_instances[i].Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                _instances[i].Running = false;
+                _instances.RemoveAt(i);
+                _echo($"[script] {name} reloaded (previous instance stopped)");
+                ScriptFinished?.Invoke(name);
+            }
+        }
+
         for (int i = 0; i < args.Count; i++)
             inst.Vars[(i + 1).ToString()] = args[i];
         inst.Vars["0"] = string.Join(" ", args);
@@ -271,6 +286,28 @@ public sealed class ScriptEngine
         for (int i = 0; i < _instances.Count; i++)
             FireActions(_instances[i], null);
         Tick();
+    }
+
+    /// <summary>
+    /// Called by the host when a new room arrives (RoomTitleEvent or
+    /// equivalent). Unblocks any script paused by the <c>move</c> command —
+    /// matches Genie4's TriggerMove behavior.
+    /// </summary>
+    public void OnRoomChanged()
+    {
+        bool wokeAny = false;
+        for (int i = 0; i < _instances.Count; i++)
+        {
+            var inst = _instances[i];
+            if (inst.Paused && inst.PauseMode == PauseMode.Move)
+            {
+                inst.Paused     = false;
+                inst.PauseMode  = PauseMode.None;
+                inst.PauseUntil = DateTime.MinValue;
+                wokeAny = true;
+            }
+        }
+        if (wokeAny) Tick();
     }
 
     public void Tick()
@@ -466,7 +503,22 @@ public sealed class ScriptEngine
         if ((t[0] == ':' || t[^1] == ':') && !t.Contains(' ')) return true;
         // Brace block delimiters are structural — the parser already mapped
         // jumps over them; at runtime they're no-ops.
-        if (t == "{" || t == "}") return true;
+        if (t == "{") return true;
+        if (t == "}")
+        {
+            // While-loop closing brace: jump back to the while line so the
+            // condition is re-evaluated.
+            if (inst.WhileBackJump.TryGetValue(currentIdx, out var back))
+            {
+                inst.Pc = back;
+                return true;
+            }
+            // When the closing brace terminates a true branch inside an
+            // if/elseif chain, skip past any following elseif/else branches.
+            if (inst.BraceEndJump.TryGetValue(currentIdx, out var skipTo))
+                inst.Pc = skipTo;
+            return true;
+        }
 
         // `action ... when <pattern>` is registered raw — HandleAction
         // substitutes the pattern itself at registration time, but the
@@ -499,23 +551,32 @@ public sealed class ScriptEngine
             var key = lower[3..];
             bool present = inst.Vars.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v);
             DbgEcho(inst, 3, $"if_{key} (%%{key}=\"{v ?? ""}\") = {present}");
-            return HandleConditional(present, rest, inst, lineNo, currentIdx);
+            // The parser may have rewritten `if_N <stmt>` / `if_N then <stmt>`
+            // into block form prefixed with " then" so BuildIfMaps could
+            // treat it as a regular block-if. Strip the leading `then`
+            // keyword before passing to HandleConditional, which expects
+            // the inline body (or empty / "{" for block form).
+            int tIdx = ScriptParser.FindThenKeyword(rest);
+            var afterThen = tIdx >= 0 ? rest[(tIdx + 4)..].Trim() : rest;
+            return HandleConditional(present, afterThen, inst, lineNo, currentIdx);
         }
 
         switch (lower)
         {
             case "if":
+            case "elseif":
+            case "while":
             {
                 int thenIdx = ScriptParser.FindThenKeyword(rest);
                 if (thenIdx < 0)
                 {
-                    _echo($"[script] {inst.Name}:{lineNo} 'if' missing 'then'");
+                    _echo($"[script] {inst.Name}:{lineNo} '{lower}' missing 'then'");
                     return true;
                 }
                 var condText  = rest[..thenIdx].Trim();
                 var afterThen = rest[(thenIdx + 4)..].Trim();
                 bool cond = EvalConditionSafe(condText, inst);
-                DbgEcho(inst, 3, $"if ({condText}) = {cond}");
+                DbgEcho(inst, 3, $"{lower} ({condText}) = {cond}");
                 return HandleConditional(cond, afterThen, inst, lineNo, currentIdx);
             }
 
@@ -623,6 +684,42 @@ public sealed class ScriptEngine
                 DbgEcho(inst, 2, $"delay {secs}s (ignoring RT)");
                 return false;
             }
+
+            case "move":
+            {
+                // move <cmd> — send <cmd> to the game and pause the script
+                // until a new room arrives (RoomTitleEvent → OnRoomChanged).
+                // Matches Genie4: used by walking scripts like bank.cmd's
+                // `move go bank` / `move s`. An empty arg just waits for a
+                // room change without sending anything (rare).
+                if (rest.Trim().Length > 0)
+                {
+                    if (_inFlight >= _typeAhead.Limit)
+                    {
+                        inst.Pc--; // re-run next tick when budget frees up
+                        return false;
+                    }
+                    _inFlight++;
+                    EchoCommand?.Invoke(inst.Name, rest);
+                    Extensions.DispatchCommand(rest);
+                    _sendCommand(rest);
+                }
+                inst.Paused     = true;
+                inst.PauseMode  = PauseMode.Move;
+                inst.PauseUntil = DateTime.MaxValue; // wakes only on room change
+                DbgEcho(inst, 2, $"move \"{rest}\" (waiting for room change)");
+                return false;
+            }
+
+            case "nextroom":
+                // Pause until the next room change without sending anything.
+                // Genie4 equivalent for waiting on someone else's movement
+                // (e.g. dragging) or a passive room transition.
+                inst.Paused     = true;
+                inst.PauseMode  = PauseMode.Move;
+                inst.PauseUntil = DateTime.MaxValue;
+                DbgEcho(inst, 2, "nextroom (waiting for room change)");
+                return false;
 
             case "goto":
                 if (inst.Labels.TryGetValue(rest.Trim(), out var gi))
@@ -759,6 +856,9 @@ public sealed class ScriptEngine
                 return true;
 
             case "var":
+            case "vars":
+            case "variable":
+            case "setvar":
             case "setvariable":
             {
                 var (vn, vv) = SplitCmd(rest);
@@ -768,9 +868,19 @@ public sealed class ScriptEngine
             }
 
             case "unvar":
+            case "unvariable":
+            case "unsetvar":
+            case "unsetvariable":
             case "deletevariable":
                 DbgEcho(inst, 4, $"unvar {rest.Trim()}");
                 inst.Vars.Remove(rest.Trim());
+                return true;
+
+            case "save":
+                // Genie4 stores the save command's argument in the local
+                // variable "s" — scripts read it back as %s.
+                inst.Vars["s"] = rest;
+                DbgEcho(inst, 4, $"save → s = \"{rest}\"");
                 return true;
 
             case "random":
@@ -809,6 +919,11 @@ public sealed class ScriptEngine
                 return true;
             }
 
+            case "counter":
+                // Genie4 shorthand: `counter <op> [n]` is `math c <op> [n]`.
+                rest = "c " + rest;
+                goto case "math";
+
             case "math":
             {
                 // math <var> <op> <n>   ops: add | subtract | multiply | divide | set
@@ -846,8 +961,40 @@ public sealed class ScriptEngine
                 HandleAction(rest, inst, lineNo);
                 return true;
 
+            // Genie4 Jint/plugin commands. Not ported — Genie5 has no embedded
+            // JS engine or .NET plugin host. Emit a one-time per-script echo
+            // so the user knows the call was a no-op, and (for jscall/plugin
+            // forms that take a result var) clear the target var so downstream
+            // logic doesn't read stale values.
+            case "js":
+            case "javascript":
+                _echo($"[script] {inst.Name}:{lineNo} '{lower}' is not supported in Genie5 (no JS engine)");
+                return true;
+
+            case "jscall":
+            {
+                var (vn, _) = SplitCmd(rest);
+                if (vn.Length > 0) inst.Vars[vn.Trim()] = string.Empty;
+                _echo($"[script] {inst.Name}:{lineNo} 'jscall' is not supported in Genie5; cleared %{vn.Trim()}");
+                return true;
+            }
+
+            case "plugin":
+            {
+                var (vn, _) = SplitCmd(rest);
+                if (vn.Length > 0) inst.Vars[vn.Trim()] = string.Empty;
+                _echo($"[script] {inst.Name}:{lineNo} 'plugin' is not supported in Genie5; cleared %{vn.Trim()}");
+                return true;
+            }
+
+            case "pluginscript":
+                _echo($"[script] {inst.Name}:{lineNo} 'pluginscript' is not supported in Genie5");
+                return true;
+
             case "eval":
+            case "evaluate":
             case "evalmath":
+            case "evaluatemath":
             {
                 var (vn, expr) = SplitCmd(rest);
                 if (string.IsNullOrEmpty(vn))
@@ -858,7 +1005,8 @@ public sealed class ScriptEngine
                 try
                 {
                     var result = ScriptExpression.Eval(expr, inst, Globals);
-                    inst.Vars[vn.Trim()] = lower == "evalmath"
+                    bool isMath = lower == "evalmath" || lower == "evaluatemath";
+                    inst.Vars[vn.Trim()] = isMath
                         ? ScriptExpression.ToNum(result).ToString("0.################", CultureInfo.InvariantCulture)
                         : ScriptExpression.ToStr(result);
                 }
