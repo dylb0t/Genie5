@@ -415,7 +415,7 @@ public sealed class ScriptEngine
                     captures = new string[10];
                     try
                     {
-                        var m = Regex.Match(line, act.Pattern, RegexOptions.IgnoreCase);
+                        var m = Regex.Match(line, act.Pattern);
                         if (m.Success)
                         {
                             captures[0] = m.Value;
@@ -1461,11 +1461,14 @@ public sealed class ScriptEngine
                                   ScriptInstance inst, bool capture)
     {
         if (string.IsNullOrEmpty(pattern)) return false;
+        // Genie4 actions / matchwait / waitfor / waitforre default to
+        // case-SENSITIVE matching. Mirror that here so a pattern like
+        // `Night Sky` doesn't fire on environmental flavor "the night sky".
         if (!isRegex)
-            return line.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0;
+            return line.IndexOf(pattern, StringComparison.Ordinal) >= 0;
 
         Match m;
-        try { m = Regex.Match(line, pattern, RegexOptions.IgnoreCase); }
+        try { m = Regex.Match(line, pattern); }
         catch { return false; }
         if (!m.Success) return false;
         if (capture)
