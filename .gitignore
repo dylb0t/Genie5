@@ -19,6 +19,8 @@ obj/
 # (Inline comments after a pattern aren't valid in .gitignore — Git treats
 #  the whole line as the pattern. Keep the comment on its own line.)
 publish/
+# Local build artifacts from publish/build-mac.sh (the .app / .dmg).
+dist/
 *.user
 *.suo
 *.userprefs
