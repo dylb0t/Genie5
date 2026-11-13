@@ -60,8 +60,8 @@ On every relevant state change, [OnStateChanged](../src/Genie.Core/Mapper/AutoMa
 
 1. **(a) Server room id** — if `<nav rm="…"/>` gave us an id and a node has that `ServerRoomId`, that's definitive.
 2. **(b) Graph walk** — if we know the previous node and the movement verb used, follow that arc and confirm the destination title matches. Handles both compass directions and non-compass `MoveCommand`s (`go alley`, `climb trellis`).
-3. **(c) Fingerprint index** — [MapFingerprint](../src/Genie.Core/Mapper/MapFingerprint.cs) hashes title + cardinal exits. A single match wins; on collisions (dense cities with duplicate titles) it disambiguates by adjacency to `prevNode`, then by description, and otherwise **declines** rather than guess — a wrong lock-in cascades through every subsequent move.
-4. **(d) Reverse-arc search**, **(e) description tiebreaker**, then
+3. **(c) Fingerprint index** — [MapFingerprint](../src/Genie.Core/Mapper/MapFingerprint.cs) hashes title + cardinal exits. A single match wins; on collisions (dense cities with duplicate titles) it disambiguates by adjacency to `prevNode`, then by description (any of the room's stored descriptions, so day and night text both match: `MapNode.MatchesDescription`), and otherwise **declines** rather than guess — a wrong lock-in cascades through every subsequent move.
+4. **(d) Reverse-arc search**, **(e) description tiebreaker** (same title and any stored description; among several, the one whose exits best fit the live "Obvious paths", then the first in the map), then
 5. **(f)** create a new node (if learning is enabled) or fire `RoomNotFoundInZone` (the hook the UI uses to auto-switch zones).
 
 Once matched, `ServerRoomId` is stamped (when learning is on) so future visits resolve via (a) in O(1). An index (`RebuildIndex`) keeps fingerprint→nodes and serverRoomId→node lookups warm.

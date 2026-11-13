@@ -307,6 +307,24 @@ public sealed class AutoMapperEngine
         return want.Count > 0 && want.IsSubsetOf(NonCompassVerbs(candidate));
     }
 
+    private static HashSet<Direction> CompassSet(IEnumerable<string> liveExits) =>
+        liveExits.Select(DirectionHelper.Parse).Where(d => d != Direction.None).ToHashSet();
+
+    private static HashSet<Direction> CompassSet(IEnumerable<MapExit> nodeExits) =>
+        nodeExits.Select(e => e.Direction).Where(d => d != Direction.None).ToHashSet();
+
+    /// <summary>How well a stored room's compass exits fit the live "Obvious
+    /// paths", lower is better: 0 the same set; 1 the room has every live exit
+    /// plus some the game isn't showing (a closed door); 2 they share at least
+    /// one; 3 nothing in common (or no live exits to compare).</summary>
+    private static int ExitFit(HashSet<Direction> nodeDirs, HashSet<Direction> liveDirs)
+    {
+        if (liveDirs.Count == 0) return 3;
+        if (nodeDirs.SetEquals(liveDirs)) return 0;
+        if (nodeDirs.IsSupersetOf(liveDirs)) return 1;
+        return nodeDirs.Overlaps(liveDirs) ? 2 : 3;
+    }
+
     /// <summary>
     /// True once <see cref="LoadZone"/> has run at least once this session —
     /// from a community file, an app-layer cross-zone auto-detect, or the
@@ -874,16 +892,16 @@ public sealed class AutoMapperEngine
                     }
                 }
 
-                // Disambiguation 2: description match (first 80 chars)
+                // Disambiguation 2: description match against ANY of the room's
+                // stored descriptions (day/night variants, #407). Candidates here
+                // already share title and exit set, so several matching means
+                // true twins: the first wins.
                 if (node is null && !string.IsNullOrEmpty(description))
                 {
-                    var descA = description.Length > 80 ? description[..80] : description;
                     foreach (var id in candidateIds)
                     {
                         if (!_zone.Nodes.TryGetValue(id, out var cand)) continue;
-                        if (string.IsNullOrEmpty(cand.Description)) continue;
-                        var descB = cand.Description.Length > 80 ? cand.Description[..80] : cand.Description;
-                        if (descA.Equals(descB, StringComparison.OrdinalIgnoreCase))
+                        if (cand.MatchesDescription(description))
                         { node = cand; tier = "c:fingerprint+desc"; break; }
                     }
                 }
@@ -908,23 +926,30 @@ public sealed class AutoMapperEngine
             }
         }
 
-        // (e) Description tiebreaker: scan all nodes with matching title and
-        //     pick the one whose description matches (handles duplicate titles).
+        // (e) Description tiebreaker: among all nodes with matching title, the
+        //     ones where ANY stored description matches (day/night variants,
+        //     #407). Reached when the exit set didn't narrow it (closed doors,
+        //     an exit the map lacks), so exits rank the matches rather than
+        //     filter them: the best exit fit wins, and between equally good
+        //     fits — true twins — the first in the map.
         if (node is null && allowFuzzy && !string.IsNullOrEmpty(description))
         {
+            var liveDirs = CompassSet(exits);
+            int bestFit = int.MaxValue;
             foreach (var candidate in _zone.Nodes.Values)
             {
                 if (!candidate.Title.Equals(title, StringComparison.OrdinalIgnoreCase))
                     continue;
                 if (ContradictsServerId(candidate)) continue;
-                if (string.IsNullOrEmpty(candidate.Description)) continue;
-                // Compare the first 80 chars of description (handles minor
-                // trailing variations like player names in room text).
-                var descA = description.Length > 80 ? description[..80] : description;
-                var descB = candidate.Description.Length > 80
-                    ? candidate.Description[..80] : candidate.Description;
-                if (descA.Equals(descB, StringComparison.OrdinalIgnoreCase))
-                { node = candidate; tier = "e:desc-only"; break; }
+                if (!candidate.MatchesDescription(description)) continue;
+                var fit = ExitFit(CompassSet(candidate.Exits), liveDirs);
+                if (fit < bestFit)
+                {
+                    bestFit = fit;
+                    node = candidate;
+                    tier = "e:desc-only";
+                    if (fit == 0) break;   // exact exits: nothing can beat it
+                }
             }
         }
 
