@@ -29,7 +29,7 @@ Both affect display and routing only — the map files themselves are untouched.
 
 ## Finding your room
 
-Genie identifies your current room from what the game sends — the room title, the obvious paths, the description, and (when present) the server's room id. It resolves position with a priority ladder: a known server-room id is definitive; otherwise it follows the exit you just used from your last known room; otherwise it fingerprints the room (title + exits) and disambiguates by neighborhood and description. When it genuinely can't tell, it declines rather than guessing — a wrong lock-in would cascade through every later move.
+Genie identifies your current room from what the game sends — the room title, the obvious paths, the description, and (when present) the server's room id. It resolves position with a priority ladder: a known server-room id is definitive; otherwise it follows the exit you just used from your last known room; otherwise it fingerprints the room (title + exits) and disambiguates by neighborhood and description. A room with more than one stored description (day and night text, for example) matches on any of them. When it genuinely can't tell, it declines rather than guessing — a wrong lock-in would cascade through every later move.
 
 ### Lookup vs. learning
 

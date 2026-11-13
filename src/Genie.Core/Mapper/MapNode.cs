@@ -76,13 +76,39 @@ public sealed class MapNode
     /// rest were dropped on import and then erased from disk on the next
     /// export.
     /// <para>
-    /// Note that <see cref="AutoMapperEngine"/> still matches arrivals against
-    /// <see cref="Description"/> alone. Preserving the variants here is what
-    /// makes matching against all of them possible later; it does not by
-    /// itself change matching.
+    /// <see cref="AutoMapperEngine"/> matches an arrival against every variant
+    /// (<see cref="MatchesDescription"/>), as Genie 4's <c>Node.Compare</c> did:
+    /// a room stored with its night text first must still be found by day (#407).
     /// </para>
     /// </remarks>
     public List<string> Descriptions { get; set; } = new();
+
+    /// <summary>How much of a description is compared: enough to tell rooms
+    /// apart, short enough to ignore trailing variations (a player's name in the
+    /// room text, a shop's changing stock).</summary>
+    public const int DescriptionMatchLength = 80;
+
+    /// <summary>
+    /// True when <paramref name="live"/> matches ANY stored description, comparing
+    /// the first <see cref="DescriptionMatchLength"/> characters, case-insensitively.
+    /// Genie 4's <c>Node.Compare</c> matched any variant too
+    /// (<c>Descriptions.Contains</c>); only checking the first left every room
+    /// with day/night text unmatchable for half the day (#407).
+    /// </summary>
+    public bool MatchesDescription(string live)
+    {
+        if (string.IsNullOrEmpty(live)) return false;
+        var a = Prefix(live);
+        foreach (var stored in Descriptions)
+        {
+            if (string.IsNullOrEmpty(stored)) continue;
+            if (a.Equals(Prefix(stored), StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+
+        static ReadOnlySpan<char> Prefix(string s)
+            => s.Length > DescriptionMatchLength ? s.AsSpan(0, DescriptionMatchLength) : s.AsSpan();
+    }
 
     /// <summary>
     /// True when this room links to another zone file — its <see cref="Notes"/>
