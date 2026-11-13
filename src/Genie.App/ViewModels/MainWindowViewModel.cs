@@ -1584,9 +1584,7 @@ public class MainWindowViewModel : ReactiveObject, IActivatableViewModel
             if (result is null) return;
             // Same teardown as #connect — character change must drop the old
             // session (and Genie-owned Lich) before the new auto-launch.
-            if (IsConnected) await DisconnectAsync();
-            else _manualDisconnect = true;
-            await ConnectAsync(result.Config, result.Profile);
+            await ReplaceSessionAsync(result.Config, result.Profile);
         });
 
         DisplaySettingsCommand = ReactiveCommand.CreateFromTask(async () =>
@@ -5622,7 +5620,11 @@ public class MainWindowViewModel : ReactiveObject, IActivatableViewModel
                 // window, and — unless the user turned it off — pop a modal notice
                 // so leaving the game is unmissable. Suppressed while reconnecting
                 // (a future Connected will resume the session).
-                if (e.Kind == ConnectionEventKind.Disconnected && _reconnectAt is null)
+                // Not when it's the old link closing for a new connect (character
+                // switch, #connect over an open session): Genie 4 showed nothing
+                // then, and the new login is already under way.
+                if (e.Kind == ConnectionEventKind.Disconnected && _reconnectAt is null
+                    && !IsOldLinkClosing())
                 {
                     GameText.AddSystemLine(WindowTimestamp.Prefix() + "disconnected");
 
@@ -6165,7 +6167,9 @@ public class MainWindowViewModel : ReactiveObject, IActivatableViewModel
         {
             var (cfg, profile) = ResolveStartupConfig(Startup);
             if (cfg is null) return;
-            await ConnectAsync(cfg, profile);
+            _explicitConnectsInFlight++;
+            try { await ConnectAsync(cfg, profile); }
+            finally { EndExplicitConnect(); }
         }
         catch (Exception ex)
         {
@@ -6260,6 +6264,49 @@ public class MainWindowViewModel : ReactiveObject, IActivatableViewModel
                   GameCode        = string.IsNullOrWhiteSpace(p.GameCode) ? "DR" : p.GameCode,
                   FrontEndId      = p.FrontEndId,
               };
+
+    /// <summary>
+    /// Explicit connects in progress: the Connect dialog, <c>#connect</c> (typed,
+    /// scripted or from the inbox) and the startup connect, from closing the old
+    /// link until the new login finishes. The old link's Disconnected event lands
+    /// in that window, and it is not the session ending: Genie 4 closed the old
+    /// socket silently when connecting over it (<c>Connection.Connect</c>), so
+    /// no "disconnected" marker, popup or Lich stop for it. Auto-reconnect
+    /// attempts are not counted, so a ladder that gives up still says so.
+    /// UI thread only.
+    /// </summary>
+    private int _explicitConnectsInFlight;
+
+    /// <summary>A Disconnected event is the old link closing for a new connect,
+    /// not the session ending.</summary>
+    private bool IsOldLinkClosing() => _explicitConnectsInFlight > 0;
+
+    /// <summary>End an explicit connect's window. Posted to the dispatcher below
+    /// Background priority rather than done inline: connection events reach the
+    /// UI thread as dispatcher posts from the network thread, so the old link's
+    /// Disconnected (posted during the teardown) is always handled while the
+    /// count is still up, however fast the new connect was. (ReactiveUI's
+    /// scheduler would run this inline, since we're already on the UI thread.)</summary>
+    private void EndExplicitConnect()
+        => Avalonia.Threading.Dispatcher.UIThread.Post(
+               () => _explicitConnectsInFlight--, Avalonia.Threading.DispatcherPriority.ContextIdle);
+
+    /// <summary>True while an explicit connect is replacing the session. For tests.</summary>
+    internal bool IsReplacingSession => _explicitConnectsInFlight > 0;
+
+    /// <summary>Close any open session and connect: the Connect dialog and
+    /// <c>#connect</c>. See <see cref="_explicitConnectsInFlight"/>.</summary>
+    internal async Task ReplaceSessionAsync(ConnectionConfig cfg, ConnectionProfile? profile)
+    {
+        _explicitConnectsInFlight++;
+        try
+        {
+            if (IsConnected) await DisconnectAsync();
+            else _manualDisconnect = true;   // ensure an in-flight drop doesn't race an auto-reconnect
+            await ConnectAsync(cfg, profile);
+        }
+        finally { EndExplicitConnect(); }
+    }
 
     private async Task DisconnectAsync()
     {
@@ -7369,9 +7416,7 @@ public class MainWindowViewModel : ReactiveObject, IActivatableViewModel
 
         try
         {
-            if (IsConnected) await DisconnectAsync();
-            else _manualDisconnect = true;   // ensure an in-flight drop doesn't race an auto-reconnect
-            await ConnectAsync(cfg, profile);
+            await ReplaceSessionAsync(cfg, profile);
         }
         catch (Exception ex)
         {
