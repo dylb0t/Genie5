@@ -384,7 +384,7 @@ Both clients support flexible dockable layouts; the tech differs (WinForms MDI v
 | **Debug** (parser trace) | ✅ | ✅ via Raw XML window | ✅ | Plus `[dbg:N]` script-level traces |
 | **Raw** (raw XML inspector) | ✅ | ✅ RawXmlTool | ✅ | Window ▸ Raw XML, hidden by default |
 | **Portrait** | ✅ | ✅ | ✅ | Room-art panel takes its G4 name; dock id unchanged so saved layouts restore it |
-| **Room** (title/description/exits) | n/a as separate | ✅ | 🆕 | Genie 5 splits room from game text into its own panel |
+| **Room** (title/description/exits) | ✅ | ✅ | ✅ | A snapshot of the current room redrawn on each room change (G4 `Game.UpdateRoom`), in the window's own font, size and colours; title in `roomname`, description in `roomdesc` (#424) |
 | **Hands Strip** | ✅ within icon bar | ✅ separate strip | 🆕 | Dedicated; toggleable position |
 | **Script Bar** | ✅ | ✅ | ✅ | Auto-hides when empty; per-chip pause/resume/debug/trace/vars/edit/stop; Top or Bottom position |
 | **Script Manager** panel | ✅ Script Explorer | ✅ dockable panel | 🆕 | Browse / run / edit the library + manage running scripts (pause / stop / reload / vars / trace); toggled from the Scripts menu or `#script explorer` |

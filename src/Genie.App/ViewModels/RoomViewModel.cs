@@ -21,8 +21,8 @@ public class RoomViewModel : ReactiveObject
     // rules, name colours (#154) and MonsterBold (#131) all apply in the Room
     // panel — previously only the objects line was tokenized, which is why
     // imported "room" highlights did nothing here. The plain string twins stay
-    // for the IsVisible gates and copy. Each panel keeps its own default
-    // Foreground; unclaimed characters inherit it.
+    // for the IsVisible gates and copy. Unclaimed characters inherit the
+    // window's own text colour (#424).
     [Reactive] public IReadOnlyList<Inline> TitleInlines       { get; private set; } = System.Array.Empty<Inline>();
     [Reactive] public IReadOnlyList<Inline> DescriptionInlines { get; private set; } = System.Array.Empty<Inline>();
     [Reactive] public IReadOnlyList<Inline> ExitsInlines       { get; private set; } = System.Array.Empty<Inline>();
@@ -62,17 +62,24 @@ public class RoomViewModel : ReactiveObject
             });
     }
 
-    private void Apply(string componentId, string content, IReadOnlyList<BoldSpan>? boldSpans)
+    internal void Apply(string componentId, string content, IReadOnlyList<BoldSpan>? boldSpans)
     {
         // The title paints through the roomname preset — same palette entry
-        // the game window uses for its <style id="roomName"/> line (#174).
-        // ComponentEvents carry no preset spans, so synthesize a full-length
-        // one; user highlight rules still win (presets are the ??= base
-        // layer), and a "Default" preset leaves the panel's themed foreground.
-        // The other fields keep the theme colour — only the title has a
-        // dedicated preset identity in the Genie 4 palette.
-        var presetSpans = componentId == "room title" && content.Length > 0
-            ? new[] { new PresetSpan(0, content.Length, "roomName") }
+        // the game window uses for its <style id="roomName"/> line (#174) —
+        // and the description through roomdesc, as Genie 4's UpdateRoom
+        // printed it (#424). ComponentEvents carry no preset spans, so
+        // synthesize a full-length one; user highlight rules still win
+        // (presets are the ??= base layer), and a "Default" preset leaves the
+        // window's own text colour. Exits, players and objects have no preset
+        // in Genie 4 either: they take the window's text colour.
+        var preset = componentId switch
+        {
+            "room title" => "roomName",
+            "room desc"  => "roomDesc",
+            _            => null,
+        };
+        var presetSpans = preset is not null && content.Length > 0
+            ? new[] { new PresetSpan(0, content.Length, preset) }
             : null;
         var inlines = DefaultHighlights.Tokenize(content, links: null,
                                                  boldSpans: boldSpans, presetSpans: presetSpans, window: "room");
