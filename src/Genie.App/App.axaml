@@ -485,29 +485,34 @@
            (regression #124, MDI only; docked mode's ToolControl host already
            constrains width). Pinning Width to $parent[Grid].Bounds.Width forces
            a finite width in both modes so every field wraps. -->
-      <Grid>
+      <Grid Background="{Binding ToolBackground}">
         <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                       VerticalScrollBarVisibility="Auto"
                       Width="{Binding $parent[Grid].Bounds.Width}"
                       Height="{Binding $parent[Grid].Bounds.Height}">
         <!-- Every field renders as inlines through DefaultHighlights.Tokenize so
              user highlight rules, name colours and MonsterBold apply in this
-             panel (previously only the objects line did); each block's
-             Foreground is the default for characters no rule claims. -->
-        <StackPanel Spacing="4" Margin="8">
+             panel. Font, size and text colour are the window's own settings
+             (#424), as in Genie 4's Room window; the title and description add
+             the roomname / roomdesc presets (RoomViewModel). The fields inherit
+             them from this StackPanel. -->
+        <StackPanel Spacing="4" Margin="8"
+                    TextElement.FontFamily="{Binding ToolFontFamily}"
+                    TextElement.FontSize="{Binding ToolFontSize}"
+                    TextElement.Foreground="{Binding ToolForeground}">
           <SelectableTextBlock controls:InlinesBehavior.Source="{Binding ViewModel.TitleInlines}"
-                               FontWeight="Bold" Foreground="{DynamicResource Theme.TextPrimary}" TextWrapping="Wrap"/>
+                               FontWeight="Bold" TextWrapping="Wrap"/>
           <SelectableTextBlock controls:InlinesBehavior.Source="{Binding ViewModel.DescriptionInlines}"
-                               Foreground="{DynamicResource Theme.TextSecondary}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
+                               TextWrapping="Wrap" Margin="0,4,0,0"
                                IsVisible="{Binding ViewModel.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
           <SelectableTextBlock controls:InlinesBehavior.Source="{Binding ViewModel.ExitsInlines}"
-                               Foreground="{DynamicResource Theme.Accent}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
+                               TextWrapping="Wrap" Margin="0,4,0,0"
                                IsVisible="{Binding ViewModel.Exits,   Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
           <SelectableTextBlock controls:InlinesBehavior.Source="{Binding ViewModel.PlayersInlines}"
-                               Foreground="{DynamicResource Theme.Success}" FontSize="11" TextWrapping="Wrap"
+                               TextWrapping="Wrap"
                                IsVisible="{Binding ViewModel.Players, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
           <SelectableTextBlock controls:InlinesBehavior.Source="{Binding ViewModel.ObjectsInlines}"
-                               Foreground="{DynamicResource Theme.TextSecondary}" FontSize="11" TextWrapping="Wrap"
+                               TextWrapping="Wrap"
                                IsVisible="{Binding ViewModel.Objects, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
         </StackPanel>
         </ScrollViewer>

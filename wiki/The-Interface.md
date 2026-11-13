@@ -53,7 +53,7 @@ Toggle panels from the **Window** menu (two exceptions: the Mapper toggle lives 
 
 *The Active Spells panel — each effect with its time remaining.*
 
-Every stream window also has an **"Also show this stream in the Main window"** toggle (Configuration → **Layout** → **Windows**, per window — or right-click the window ▸ **Show in Main Window**) that additionally echoes its lines into the main game window, Genie 4-style. The Layout → Windows tab is also where each window's font is set. Highlight rules can likewise be **scoped to specific windows** — see [Configuration & Rules](Configuration#highlights--coloring-text).
+Every stream window also has an **"Also show this stream in the Main window"** toggle (Configuration → **Layout** → **Windows**, per window — or right-click the window ▸ **Show in Main Window**) that additionally echoes its lines into the main game window, Genie 4-style. The Layout → Windows tab is also where each window's font and colours are set, the Room window's included (its title and description also take the `roomname` and `roomdesc` presets). Highlight rules can likewise be **scoped to specific windows** — see [Configuration & Rules](Configuration#highlights--coloring-text).
 
 Scripts can create their **own named windows** too — the Genie 4 menu-script commands (`#window`, `#link`, `#echo >window`) build clickable menu panels that dock like any other; **Window → Script Windows** lists them, and **Window → Plugin Windows** lists the ones plugins open. Both submenus stay empty until something opens a window. See the [Scripting Reference](Scripting-Reference#named-windows-links-and-logging).
 
