@@ -144,7 +144,7 @@ jobs:
       needs.publish.result == 'success' &&
       needs.notes.result == 'success' &&
       needs['create-release'].result == 'success' &&
-      github.repository == 'GenieClient/Genie5' &&
+      (github.repository == 'GenieClient/Genie5' || github.repository == 'dylb0t/Genie5') &&
       (needs.sign.result == 'success' || vars.ENABLE_RELEASE_SIGNING != 'true')
     permissions:
       contents: write
@@ -198,7 +198,7 @@ jobs:
         # Skipped for v0.0.x throwaway test tags: Velopack refuses to pack a
         # version lower than the latest downloaded release, so plumbing tests
         # build a standalone full package with no delta instead.
-        if: ${{ !startsWith(github.ref_name, 'v0.0.') }}
+        if: ${{ !startsWith(github.ref_name, 'v0.0.') && github.repository == 'GenieClient/Genie5' }}
         # First release will fail this step (no prior assets) — that's OK,
         # the resulting full.nupkg is still valid. Subsequent releases get
         # binary-diff deltas pulled from the most recent assets.
@@ -286,7 +286,7 @@ jobs:
     # Public repo owns distribution: its feed is the delta base and the shipped
     # artifacts. The private mirror also runs on the tag and would download the
     # public 9.7 package, then vpk pack refuses (release >= current version).
-    if: github.repository == 'GenieClient/Genie5'
+    if: (github.repository == 'GenieClient/Genie5' || github.repository == 'dylb0t/Genie5')
     permissions:
       contents: write
     steps:
@@ -315,7 +315,7 @@ jobs:
         # Skipped for v0.0.x throwaway test tags: Velopack refuses to pack a
         # version lower than the latest downloaded release, so plumbing tests
         # build a standalone full package with no delta instead.
-        if: ${{ !startsWith(github.ref_name, 'v0.0.') }}
+        if: ${{ !startsWith(github.ref_name, 'v0.0.') && github.repository == 'GenieClient/Genie5' }}
         # --token authenticates the GitHub API calls (#311) — anonymous rate
         # limits 403 and silently ship a full-only lane.
         continue-on-error: true
@@ -372,7 +372,7 @@ jobs:
     # Public repo owns distribution: its feed is the delta base and the shipped
     # artifacts. The private mirror also runs on the tag and would download the
     # public 9.7 package, then vpk pack refuses (release >= current version).
-    if: github.repository == 'GenieClient/Genie5'
+    if: (github.repository == 'GenieClient/Genie5' || github.repository == 'dylb0t/Genie5')
     permissions:
       contents: write
     steps:
@@ -401,7 +401,7 @@ jobs:
         # Skipped for v0.0.x throwaway test tags: Velopack refuses to pack a
         # version lower than the latest downloaded release, so plumbing tests
         # build a standalone full package with no delta instead.
-        if: ${{ !startsWith(github.ref_name, 'v0.0.') }}
+        if: ${{ !startsWith(github.ref_name, 'v0.0.') && github.repository == 'GenieClient/Genie5' }}
         # --token authenticates the GitHub API calls (#311) — anonymous rate
         # limits 403 and silently ship a full-only lane.
         continue-on-error: true
@@ -483,7 +483,7 @@ jobs:
     # Public repo owns distribution: its feed is the delta base and the shipped
     # artifacts. The private mirror also runs on the tag and would download the
     # public 9.7 package, then vpk pack refuses (release >= current version).
-    if: github.repository == 'GenieClient/Genie5'
+    if: (github.repository == 'GenieClient/Genie5' || github.repository == 'dylb0t/Genie5')
     permissions:
       contents: write
     steps:
@@ -512,7 +512,7 @@ jobs:
         # Skipped for v0.0.x throwaway test tags: Velopack refuses to pack a
         # version lower than the latest downloaded release, so plumbing tests
         # build a standalone full package with no delta instead.
-        if: ${{ !startsWith(github.ref_name, 'v0.0.') }}
+        if: ${{ !startsWith(github.ref_name, 'v0.0.') && github.repository == 'GenieClient/Genie5' }}
         # --channel is required here: `vpk download` defaults to the runner
         # OS's default channel, which on a macOS runner is `osx` (Apple
         # Silicon). Without it this job pulls the arm64 packages, so Intel

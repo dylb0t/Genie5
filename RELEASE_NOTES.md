@@ -1,3 +1,70 @@
+# Genie 5 — v5.0.0-beta.9.10.1.rc.1
+
+**Release candidate for testers.** This is beta 9.10.1 plus the fixes waiting in open pull
+requests, built so they can be tried together before they reach an official release. It is
+not an official Genie 5 release.
+
+**Unsigned.** Windows SmartScreen shows "Windows protected your PC": click **More info**,
+then **Run anyway**. On macOS, right-click the app and choose **Open** the first time. The
+[Installation guide](https://github.com/GenieClient/Genie5/wiki/Installation) has the steps
+for each platform.
+
+**Updates.** Installed copies keep checking the official Genie 5 releases. When the next
+official release comes out, Genie offers it as usual and you are back on the normal track.
+Your settings, scripts and maps are not touched by installing this.
+
+**Reporting.** Please say you are on `rc.1` and what you were doing. A session log
+(`Logs/`) helps most.
+
+## 🗺️ Mapper and scripts
+- **Zone changes at a map edge are immediate** — walking off one map onto the next (for
+  example Shard's East Gate) switches maps in the same room update, so `$zoneid` and
+  `$roomid` are right when a script reacts. Travel scripts no longer loop on `#goto`
+  retries and `#mapper reset` there. ([#426](https://github.com/GenieClient/Genie5/issues/426))
+- **`#goto` to the room you are in answers "YOU HAVE ARRIVED!"** — scripts that wait for it
+  carry on instead of retrying. ([#427](https://github.com/GenieClient/Genie5/issues/427))
+- **`waiteval` waits for a change** — a condition that is already true when the script
+  reaches it no longer passes straight through; automapper.cmd stops stalling on the
+  Himineldar Shel ice road. ([#428](https://github.com/GenieClient/Genie5/issues/428))
+- **Rooms with more than one stored description are recognised** by any of them, not just
+  the first. ([#407](https://github.com/GenieClient/Genie5/issues/407))
+- The Cross-Zone Connections editor no longer races its room cache.
+- A script's `put quit` / `put exit` stops auto-reconnect, the same as typing it.
+  ([#419](https://github.com/GenieClient/Genie5/issues/419))
+
+## 🎨 Colours, highlights and themes
+- **No built-in colours on game text** — only your own highlights colour it; link colours
+  are presets. ([#396](https://github.com/GenieClient/Genie5/issues/396))
+- **Regex highlights colour their capture groups; BeginsWith colours the line.**
+  ([#397](https://github.com/GenieClient/Genie5/issues/397),
+  [#400](https://github.com/GenieClient/Genie5/issues/400))
+- **Presets work again** — `inputuser`, `inputother`, `scriptecho` and `familiar` colour
+  text; health, mana, stamina, spirit and concentration colour the vitals bars; the
+  automapper presets colour the map; the `ui.*` presets colour the menu, command input,
+  status strip and AutoMapper Settings. Cancelling Display Settings after trying a theme
+  puts the colours back. ([#406](https://github.com/GenieClient/Genie5/issues/406))
+
+## ⏱️ Roundtime and the hands strip
+- **Layout ▸ Roundtime** picks the badge, a countdown badge, or the Genie 4 countdown bar;
+  the hands strip can show the same indicator.
+  ([#404](https://github.com/GenieClient/Genie5/issues/404))
+- The cast bar and rested-EXP gauge fit the strip, with an optional **Combined Spell
+  Timer**. ([#405](https://github.com/GenieClient/Genie5/issues/405))
+
+## 🐛 Other fixes
+- **Edit ▸ Configuration opens at once** instead of freezing while it fills.
+  ([#402](https://github.com/GenieClient/Genie5/issues/402))
+- Right-click inside a windowed-mode window opens the window menu.
+  ([#403](https://github.com/GenieClient/Genie5/issues/403))
+- The Room window uses its own font, size and colours.
+  ([#424](https://github.com/GenieClient/Genie5/issues/424))
+- On Linux, mono blocks and font lists use an installed font, and the Mono Font setting is
+  back. ([#395](https://github.com/GenieClient/Genie5/issues/395))
+- Connecting while a session is already open no longer shows a disconnect.
+- The indented "You also see" line is trimmed.
+
+---
+
 # Genie 5 — v5.0.0-beta.9.10.1
 
 **"Second Pass"** — a small fixes release. Right-click in the Healing window now transfers
